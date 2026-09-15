@@ -6,6 +6,8 @@
 // mouse position has to be divided back through that scale exactly once, which
 // is the only real subtlety in here.
 
+import { FONT, css } from "./type.js";
+
 const W = 960, H = 540;
 const $ = (id) => document.getElementById(id);
 const stage = $("stage"), canvas = $("canvas"), guides = $("guides");
@@ -117,12 +119,7 @@ function styleEl(node, el) {
   node.style.top = el.y + "px";
   node.style.width = el.w + "px";
   node.style.height = el.h + "px";
-  if (el.type === "text") {
-    node.style.fontSize = el.size + "px";
-    node.style.fontWeight = el.bold ? 700 : 400;
-    node.style.textAlign = el.align;
-    node.style.lineHeight = 1.3;
-  }
+  if (el.type === "text") node.style.cssText += ";" + css(el.role);
 }
 
 /** Text the critic flagged, so the box on the slide shows it rather than making you hunt. */
@@ -213,11 +210,12 @@ function paintRail() {
       mini.style.width = (el.w / W) * 100 + "%";
       mini.style.height = (el.h / H) * 100 + "%";
       if (el.type === "text") {
+        // Same roles as the canvas, only smaller - so a thumbnail cannot drift
+        // from the slide it is a picture of.
+        const f = FONT[el.role] ?? FONT.body;
         mini.textContent = el.text;
-        mini.style.fontSize = Math.max(2, el.size / 6.2) + "px";
-        mini.style.fontWeight = el.bold ? 700 : 400;
-        mini.style.textAlign = el.align;
-        mini.style.lineHeight = 1.3;
+        mini.style.cssText += ";" + css(el.role);
+        mini.style.fontSize = Math.max(2, f.size / 6.2) + "px";
       } else {
         const img = document.createElement("img");
         img.src = `/api/deck/${slug}/images/${encodeURIComponent(el.src)}`;
@@ -254,10 +252,8 @@ function paintToolbar() {
   const el = elById(sel);
   $("textTools").hidden = !(el && el.type === "text");
   $("del").hidden = !el;
-  if (el?.type === "text") {
-    $("bold").classList.toggle("on", el.bold);
-    $("align").textContent = el.align;
-  }
+  $("asTitle").classList.toggle("on", el?.role === "title");
+  $("asBody").classList.toggle("on", el?.role === "body");
 }
 
 function paintStatus() {
@@ -416,7 +412,7 @@ function addText() {
   const el = {
     id: uid(), type: "text",
     x: 80 + (n % 4) * 24, y: 120 + (n % 6) * 40,
-    w: 420, h: 90, text: "", size: 24, bold: false, align: "left",
+    w: 420, h: 90, text: "", role: "body",
   };
   slide().els.push(el);
   sel = el.id; editing = el.id;
@@ -594,9 +590,6 @@ addEventListener("keydown", (e) => {
     if (typing) return;
     e.preventDefault(); undoOnce(); return;
   }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b" && editing) {
-    e.preventDefault(); toggleBold(); return;
-  }
   if (e.key === "Escape" && editing) { e.preventDefault(); stopEditing(); return; }
   if (typing) return;
 
@@ -632,11 +625,9 @@ function mutate(fn) {
   if (!el || el.type !== "text") return;
   snapshot(); fn(el); save(); paintCanvas(); paintRail();
 }
-const toggleBold = () => mutate((el) => (el.bold = !el.bold));
-$("bold").onclick = toggleBold;
-$("bigger").onclick = () => mutate((el) => (el.size = Math.min(140, el.size + 4)));
-$("smaller").onclick = () => mutate((el) => (el.size = Math.max(8, el.size - 4)));
-$("align").onclick = () => mutate((el) => (el.align = el.align === "left" ? "center" : "left"));
+const setRole = (role) => mutate((el) => (el.role = role));
+$("asTitle").onclick = () => setRole("title");
+$("asBody").onclick = () => setRole("body");
 $("del").onclick = deleteEl;
 $("addText").onclick = addText;
 $("addImage").onclick = () => $("file").click();

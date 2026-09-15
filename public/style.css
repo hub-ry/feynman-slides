@@ -40,6 +40,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 button.ghost { border-color: transparent; color: var(--dim); }
 button.ghost:hover { color: var(--ink); }
 button.on { border-color: var(--sel); color: var(--sel); }
+/* The buttons are set in the face they apply, so the choice is visible rather than named. */
+button.role.title { font: 600 15px/1 ui-serif, "Iowan Old Style", Palatino, Georgia, serif; letter-spacing: -0.015em; }
+button.role.body { font: 400 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 button.danger:hover { border-color: var(--error); color: var(--error); }
 #export { border-color: var(--ok); color: var(--ok); }
 #export:disabled { border-color: var(--rule); color: var(--dim); }

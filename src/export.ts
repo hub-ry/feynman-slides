@@ -11,6 +11,7 @@ import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
 import type { Deck, El } from "./deck.ts";
 import { W, H } from "./deck.ts";
+import { css } from "../public/type.js";
 import type { Finding } from "./critic.ts";
 import type { State } from "./store.ts";
 import { blocking, imageDir } from "./store.ts";
@@ -49,8 +50,7 @@ function element(slug: string, el: El): string {
       ? `<img class="el" style="${box}" src="${src}" alt="${esc(el.alt)}">`
       : "";
   }
-  const style =
-    `${box};font-size:${el.size}px;font-weight:${el.bold ? 700 : 400};text-align:${el.align}`;
+  const style = `${box};${css(el.role)}`;
   const lines = el.text
     .split("\n")
     .map((l) => `<div>${esc(l) || "&nbsp;"}</div>`)

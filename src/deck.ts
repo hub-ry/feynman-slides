@@ -12,6 +12,8 @@
 export const W = 960;
 export const H = 540;
 
+export type Role = "title" | "body";
+
 export type TextEl = {
   id: string;
   type: "text";
@@ -20,9 +22,8 @@ export type TextEl = {
   w: number;
   h: number;
   text: string;
-  size: number;
-  bold: boolean;
-  align: "left" | "center";
+  /** Title or body. Everything about how it looks comes from this - see public/type.js. */
+  role: Role;
 };
 
 export type ImageEl = {
@@ -61,7 +62,7 @@ export function blankSlide(): Slide {
 
 export function blankDeck(title: string): Deck {
   const s = blankSlide();
-  s.els.push(text(60, 200, 840, 140, title, 54, true, "center"));
+  s.els.push(text(70, 190, 820, 150, title, "title"));
   return { title, slides: [s] };
 }
 
@@ -71,11 +72,29 @@ export function text(
   w: number,
   h: number,
   body = "",
-  size = 24,
-  bold = false,
-  align: "left" | "center" = "left",
+  role: Role = "body",
 ): TextEl {
-  return { id: uid(), type: "text", x, y, w, h, text: body, size, bold, align };
+  return { id: uid(), type: "text", x, y, w, h, text: body, role };
+}
+
+/**
+ * Bring a deck forward from when text boxes carried their own size and weight.
+ *
+ * Decks written before the two roles existed have `size` and `bold` instead.
+ * Big or bold meant title; everything else was body.
+ */
+export function migrate(deck: Deck): Deck {
+  for (const s of deck.slides) {
+    for (const el of s.els) {
+      if (el.type !== "text") continue;
+      const old = el as TextEl & { size?: number; bold?: boolean; align?: string };
+      if (!old.role) old.role = (old.size ?? 24) >= 36 || old.bold ? "title" : "body";
+      delete old.size;
+      delete old.bold;
+      delete old.align;
+    }
+  }
+  return deck;
 }
 
 /**

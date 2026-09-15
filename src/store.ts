@@ -15,7 +15,7 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Finding } from "./critic.ts";
-import { type Deck, blankDeck, slideKey } from "./deck.ts";
+import { type Deck, blankDeck, slideKey, migrate } from "./deck.ts";
 
 export const HOME = process.env.FEYNMAN_SLIDES_HOME ?? join(homedir(), ".feynman-slides");
 export const DECKS = join(HOME, "decks");
@@ -51,7 +51,7 @@ export function create(title: string): string {
 export function readDeck(slug: string): Deck {
   const p = deckPath(slug);
   if (!existsSync(p)) return blankDeck(slug);
-  return JSON.parse(readFileSync(p, "utf8")) as Deck;
+  return migrate(JSON.parse(readFileSync(p, "utf8")) as Deck);
 }
 
 export function writeDeck(slug: string, deck: Deck): void {
