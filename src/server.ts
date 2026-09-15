@@ -198,6 +198,14 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   res.writeHead(404).end("not found");
 }
 
+export class PortTaken extends Error {
+  port: number;
+  constructor(port: number) {
+    super(`127.0.0.1:${port} is already in use`);
+    this.port = port;
+  }
+}
+
 export function serve(port: number): Promise<number> {
   const server = createServer((req, res) => {
     route(req, res).catch((err) => {
@@ -205,7 +213,13 @@ export function serve(port: number): Promise<number> {
       if (!res.headersSent) json(res, 500, { error: String(err) });
     });
   });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // Without this the "already running" case is an unhandled 'error' event:
+    // twenty lines of node internals for the most ordinary thing that can
+    // happen, which is starting it twice.
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      reject(err.code === "EADDRINUSE" ? new PortTaken(port) : err);
+    });
     server.listen(port, "127.0.0.1", () => {
       resolve((server.address() as { port: number }).port);
     });
