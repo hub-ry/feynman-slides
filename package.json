@@ -1,0 +1,24 @@
+{
+  "name": "feynman-slides",
+  "version": "0.0.1",
+  "description": "Slides you are not allowed to get wrong.",
+  "type": "module",
+  "bin": {
+    "feynman-slides": "./bin/feynman-slides"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.234",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  },
+  "license": "MIT"
+}

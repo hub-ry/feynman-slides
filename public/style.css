@@ -1,0 +1,111 @@
+:root {
+  --ink: #16181d; --dim: #6b7280; --faint: #9aa0a8;
+  --bg: #faf9f7; --panel: #ffffff; --rule: #e3e0da;
+  --error: #b3261e; --jargon: #9a6700; --note: #4b5563;
+  --ok: #2f6f4f; --focus: #2f6f4f;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8e6e1; --dim: #9aa0a8; --faint: #6b7280;
+    --bg: #101216; --panel: #171a1f; --rule: #272b32;
+    --error: #ff8a80; --jargon: #e5b567; --note: #9aa0a8;
+    --ok: #7fc8a0; --focus: #7fc8a0;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  display: flex; flex-direction: column;
+}
+
+header {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .6rem .9rem; border-bottom: 1px solid var(--rule);
+  background: var(--panel); flex: 0 0 auto;
+}
+.mark { font: 600 12px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.spacer { flex: 1; }
+select, button {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: .3rem .6rem; cursor: pointer;
+}
+select { max-width: 22rem; }
+button:hover:not(:disabled) { border-color: var(--focus); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.ghost { border-color: transparent; color: var(--dim); }
+button.ghost:hover { color: var(--ink); }
+#export { border-color: var(--ok); color: var(--ok); }
+#export:disabled { border-color: var(--rule); color: var(--dim); }
+.status { font: 12px/1 var(--mono); color: var(--faint); }
+.status.busy::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-right: .45rem;
+  border-radius: 50%; background: var(--focus); animation: pulse 1.1s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+.gate { font: 12px/1 var(--mono); color: var(--error); }
+
+main { flex: 1; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); min-height: 0; }
+.pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.editor { border-right: 1px solid var(--rule); }
+
+textarea {
+  flex: 1; min-height: 0; width: 100%; resize: none;
+  padding: 1.6rem 1.8rem; border: 0; outline: 0;
+  background: var(--panel); color: var(--ink);
+  font: 14px/1.75 var(--mono); tab-size: 2;
+}
+.editor footer {
+  flex: 0 0 auto; padding: .45rem .9rem; border-top: 1px solid var(--rule);
+  font: 11px/1.4 var(--mono); color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.critique { overflow-y: auto; padding: 1.1rem 1.1rem 4rem; }
+.slide-group { margin-bottom: 1.6rem; }
+.slide-group > h3 {
+  margin: 0 0 .55rem; font: 600 11px/1.3 var(--mono);
+  letter-spacing: .08em; text-transform: uppercase; color: var(--faint);
+  display: flex; align-items: baseline; gap: .5rem;
+}
+.slide-group.current > h3 { color: var(--focus); }
+
+.finding {
+  border: 1px solid var(--rule); border-left: 3px solid var(--note);
+  border-radius: 7px; background: var(--panel);
+  padding: .75rem .85rem; margin-bottom: .6rem;
+}
+.finding.error { border-left-color: var(--error); }
+.finding.jargon { border-left-color: var(--jargon); }
+.finding.dismissed { opacity: .5; }
+.finding .tags { display: flex; gap: .45rem; align-items: center; margin-bottom: .45rem; }
+.tag { font: 600 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase;
+  padding: .22rem .4rem; border-radius: 4px; border: 1px solid currentColor; }
+.tag.error { color: var(--error); }
+.tag.jargon { color: var(--jargon); }
+.tag.note { color: var(--note); }
+.tag.basis { color: var(--faint); border-style: dashed; }
+.blocks { font: 10px/1 var(--mono); color: var(--faint); margin-left: auto; letter-spacing: .06em; }
+
+.finding blockquote {
+  margin: 0 0 .5rem; padding-left: .65rem; border-left: 2px solid var(--rule);
+  color: var(--dim); font: 13px/1.5 var(--mono); overflow-wrap: anywhere;
+}
+.finding p { margin: 0 0 .5rem; overflow-wrap: anywhere; }
+.finding .hint { color: var(--dim); font-size: 13px; }
+.finding .hint b { color: var(--ink); font-weight: 600; }
+.finding .why { margin: .5rem 0 0; font-size: 12.5px; color: var(--dim); font-style: italic; }
+
+.finding .actions { margin-top: .5rem; }
+.finding .actions button { font-size: 12px; padding: .22rem .5rem; color: var(--dim); }
+.reject { display: flex; gap: .4rem; margin-top: .5rem; }
+.reject input {
+  flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: .32rem .5rem;
+  border: 1px solid var(--rule); border-radius: 5px; background: var(--bg); color: var(--ink);
+}
+.reject input:focus { outline: 0; border-color: var(--focus); }
+
+.empty { color: var(--faint); font-size: 13px; padding: .4rem .1rem; }
+.empty.clean { color: var(--ok); }

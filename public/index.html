@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>feynman-slides</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <span class="mark">feynman-slides</span>
+  <select id="picker" aria-label="deck"></select>
+  <button id="new" class="ghost">new deck</button>
+  <span class="spacer"></span>
+  <span id="status" class="status"></span>
+  <span id="gate" class="gate" hidden></span>
+  <button id="export" disabled>export deck</button>
+</header>
+
+<main>
+  <section class="pane editor">
+    <textarea id="outline" spellcheck="false" placeholder="Pick a deck to start writing."></textarea>
+    <footer id="where"></footer>
+  </section>
+
+  <section class="pane critique">
+    <div id="findings"></div>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
