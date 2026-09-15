@@ -96,12 +96,12 @@ function fit() {
   const wrap = stage.parentElement;
   const cs = getComputedStyle(wrap);
   const availW = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const notes = document.querySelector(".notes").offsetHeight;
-  const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - notes - 14;
+  const bin = document.querySelector(".bin").offsetHeight;
+  const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - bin - 14;
   scale = Math.max(0.2, Math.min(availW / W, availH / H));
   stage.style.transform = `scale(${scale})`;
   // The stage is 960x540 in layout no matter how it is drawn, so its unscaled
-  // height would push the notes off screen. Collapse the difference.
+  // height would push the bin off screen. Collapse the difference.
   stage.style.marginBottom = `${H * scale - H}px`;
 }
 addEventListener("resize", fit);
@@ -272,8 +272,73 @@ function gate(blocking) {
     : "";
 }
 
-function paintAll() { fit(); paintCanvas(); paintRail(); paintNotes(); paintFindings(); }
-function paintNotes() { $("notes").value = slide()?.notes ?? ""; }
+function paintAll() { fit(); paintCanvas(); paintRail(); paintBin(); paintFindings(); }
+
+// --- source bin -----------------------------------------------------------
+//
+// One bin for the deck, not a box per slide. Source material does not divide
+// neatly by slide: one passage covers three of them, and the definition you
+// pasted while writing slide 2 is exactly what the critic needs on slide 9.
+
+function paintBin() {
+  deck.sources ??= [];
+  const n = deck.sources.length;
+  const count = $("binCount");
+  count.textContent = n ? `${n}` : "empty";
+  count.classList.toggle("some", n > 0);
+
+  const list = $("binList");
+  list.replaceChildren();
+  for (const src of deck.sources) {
+    const row = document.createElement("div");
+    row.className = "source";
+    const ta = document.createElement("textarea");
+    ta.value = src.text;
+    ta.spellcheck = false;
+    ta.rows = Math.min(6, src.text.split("\n").length + 1);
+    ta.oninput = () => { src.text = ta.value; save(); };
+    // Editing a source changes what every slide is checked against, so the
+    // re-read waits until you are done rather than firing on each keystroke.
+    ta.onblur = () => { if (!src.text.trim()) removeSource(src.id); else firmReview(); };
+    const kill = document.createElement("button");
+    kill.className = "kill"; kill.textContent = "\u00d7"; kill.title = "Remove";
+    kill.onclick = () => removeSource(src.id);
+    row.append(ta, kill);
+    list.append(row);
+  }
+}
+
+function removeSource(id) {
+  snapshot();
+  deck.sources = deck.sources.filter((s) => s.id !== id);
+  save(); paintBin(); firmReview();
+}
+
+function addSource(text) {
+  if (!text.trim()) return;
+  snapshot();
+  (deck.sources ??= []).push({ id: uid(), text: text.trim() });
+  save(); paintBin(); firmReview();
+}
+
+$("binToggle").onclick = () => {
+  const open = $("binBody").hidden;
+  $("binBody").hidden = !open;
+  $("binToggle").setAttribute("aria-expanded", String(open));
+  fit();
+  if (open) $("binAdd").focus();
+};
+
+$("binAdd").onkeydown = (e) => {
+  // Enter adds, shift+enter is a newline - the bin is a list of things, and
+  // most things pasted into it are one thing.
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    addSource($("binAdd").value);
+    $("binAdd").value = "";
+  }
+};
+$("binAdd").onblur = () => { addSource($("binAdd").value); $("binAdd").value = ""; };
 
 // --- findings pane --------------------------------------------------------
 
@@ -390,7 +455,7 @@ async function go(i) {
 
 function addSlide() {
   snapshot();
-  deck.slides.splice(idx + 1, 0, { id: uid(), els: [], notes: "" });
+  deck.slides.splice(idx + 1, 0, { id: uid(), els: [] });
   idx += 1; sel = null;
   save(); paintAll();
 }
@@ -613,7 +678,7 @@ addEventListener("keydown", (e) => {
 });
 
 addEventListener("paste", async (e) => {
-  if (editing || document.activeElement === $("notes")) return;
+  if (editing || ["TEXTAREA", "INPUT"].includes(document.activeElement?.tagName)) return;
   const file = [...(e.clipboardData?.files ?? [])][0];
   if (file) { e.preventDefault(); await addImageFile(file); }
 });
@@ -633,16 +698,13 @@ $("addText").onclick = addText;
 $("addImage").onclick = () => $("file").click();
 $("file").onchange = async (e) => { await addImageFile(e.target.files[0]); e.target.value = ""; };
 
-$("notes").oninput = () => { slide().notes = $("notes").value; save(); schedulePause(); };
-$("notes").onblur = () => { if (slide()) firmReview(); };
-
 // --- decks ----------------------------------------------------------------
 
 async function load(next) {
   slug = next;
   localStorage.setItem("deck", slug);
   const r = await (await fetch(`/api/deck/${slug}`)).json();
-  deck = r.deck; state = r.state;
+  deck = r.deck; deck.sources ??= []; state = r.state;
   idx = 0; sel = editing = null; reviewing = new Set(); undo.length = 0;
   gate(r.blocking);
   connect();

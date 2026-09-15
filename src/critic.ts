@@ -13,7 +13,7 @@
 
 import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import type { Slide } from "./deck.ts";
+import type { Slide, Source } from "./deck.ts";
 import { readable, slideKey } from "./deck.ts";
 
 export type Severity = "error" | "jargon" | "note";
@@ -86,8 +86,8 @@ const SEVERITY = z.enum(["error", "jargon", "note"]);
 type Pending = { deliver: ((text: string) => void) | null };
 
 export type CriticSession = {
-  /** Critique one slide. Resolves with the findings for that slide only. */
-  review(slide: Slide, firm: boolean): Promise<Finding[]>;
+  /** Critique one slide against the deck's source bin. Resolves with that slide's findings. */
+  review(slide: Slide, sources: Source[], firm: boolean): Promise<Finding[]>;
   /** Tell the critic a finding was rejected, so it never raises it again. */
   dismissed(finding: Finding, reason: string): void;
   close(): void;
@@ -105,6 +105,7 @@ export function startCritic(deckTitle: string): CriticSession {
   let seq = 0;
   const rejections: string[] = [];
   let chain: Promise<void> = Promise.resolve();
+  let sentBin = "\u0000"; // never equal to a real bin, so the first review always sends one
 
   // Every turn yielded here is exactly one review, and every review ends in
   // exactly one `result`. That one-to-one is load-bearing: an extra turn - an
@@ -183,7 +184,7 @@ export function startCritic(deckTitle: string): CriticSession {
     }
   })();
 
-  function reviewOne(slide: Slide, firm: boolean): Promise<Finding[]> {
+  function reviewOne(slide: Slide, sources: Source[], firm: boolean): Promise<Finding[]> {
     if (closed) return Promise.resolve([]);
     currentKey = slideKey(slide);
     const bar = firm
@@ -193,21 +194,30 @@ export function startCritic(deckTitle: string): CriticSession {
       ? `THEY REJECTED THESE FINDINGS. Never raise them again - they may well be\nright, and you were working from your own knowledge.\n\n${rejections.join("\n\n")}\n\n`
       : "";
     rejections.length = 0;
+
+    const now = bin(sources);
+    const sources_ = now === sentBin
+      ? "The source bin is unchanged from what you were shown earlier. Use it."
+      : now;
+    sentBin = now;
+
     return new Promise<Finding[]>((resolve) => {
       inflight.resolve = resolve;
-      pending.deliver?.(`${rejected}${bar}\n\n${render(slide)}\n\nCall \`report\` now.`);
+      pending.deliver?.(
+        `${rejected}${bar}\n\n${render(slide)}\n\n${sources_}\n\nCall \`report\` now.`,
+      );
     });
   }
 
   return {
-    review(slide, firm) {
+    review(slide, sources, firm) {
       if (closed) return Promise.resolve([]);
       // Queued, because this is ONE conversation and a conversation is serial.
       // Reviewing two slides at once overwrote the first review's resolver
       // with the second's and silently dropped a slide's findings - the
       // editor happily fires a pause on one slide and a blur on another
       // milliseconds apart, so this is the normal case, not the edge case.
-      const run = chain.then(() => reviewOne(slide, firm));
+      const run = chain.then(() => reviewOne(slide, sources, firm));
       chain = run.then(
         () => undefined,
         () => undefined,
@@ -248,10 +258,26 @@ function userTurn(text: string) {
  * is in an unlabelled diagram should read as a slide with nothing on it.
  */
 function render(slide: Slide): string {
-  const { title, body, notes } = readable(slide);
+  const { title, body } = readable(slide);
   const lines = body.length ? body.map((b) => `- ${b}`).join("\n") : "(nothing written yet)";
-  const source = notes.trim()
-    ? `SOURCE MATERIAL THEY PASTED (check them against THIS):\n${notes.trim()}`
-    : "SOURCE MATERIAL: none given. Fall back on your own knowledge and mark every finding basis=knowledge.";
-  return `SLIDE HEADING: ${title || "(none)"}\n\nTEXT ON THE SLIDE:\n${lines}\n\n${source}`;
+  return `SLIDE HEADING: ${title || "(none)"}\n\nTEXT ON THIS SLIDE:\n${lines}`;
+}
+
+/**
+ * The source bin, sent only when it has changed.
+ *
+ * This is the payoff for the critic being one long conversation instead of a
+ * call per slide: the bin is already in its context from the last time, so a
+ * deck with a chapter pasted into it does not re-send that chapter on every
+ * pause while typing.
+ */
+function bin(sources: Source[]): string {
+  if (!sources.length) {
+    return "SOURCE BIN: empty. Fall back on your own knowledge and mark every finding basis=knowledge.";
+  }
+  return (
+    "SOURCE BIN for this deck - check them against ALL of it, not just the part\n" +
+    "that looks like this slide. Any entry may cover any slide.\n\n" +
+    sources.map((s, i) => `--- source ${i + 1} ---\n${s.text.trim()}`).join("\n\n")
+  );
 }

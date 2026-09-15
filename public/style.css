@@ -123,17 +123,43 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: 172px minma
 .handle.n, .handle.s { cursor: ns-resize; }
 .handle.e, .handle.w { cursor: ew-resize; }
 
-/* --- notes -------------------------------------------------------------- */
-.notes { width: 100%; max-width: 960px; flex: 0 0 auto; }
-.notes label { display: block; font: 11px/1.4 var(--mono); color: var(--faint);
-  letter-spacing: .06em; text-transform: uppercase; margin-bottom: .3rem; }
-.notes .hint { text-transform: none; letter-spacing: 0; }
-.notes textarea {
-  width: 100%; height: 4.4rem; resize: vertical; padding: .5rem .6rem;
-  border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink);
+/* --- source bin --------------------------------------------------------- */
+.bin { width: 100%; max-width: 960px; flex: 0 0 auto; }
+.bin-head { display: flex; align-items: baseline; gap: .55rem; min-width: 0; }
+#binToggle {
+  border-color: transparent; padding: .18rem .3rem; color: var(--dim);
+  font: 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase;
+  display: flex; align-items: center; gap: .35rem; flex: 0 0 auto;
+}
+#binToggle:hover { color: var(--ink); }
+#binToggle .caret { display: inline-block; transition: transform .12s ease; }
+#binToggle[aria-expanded="true"] .caret { transform: rotate(90deg); }
+#binToggle .count { color: var(--faint); }
+#binToggle .count.some { color: var(--ok); }
+.bin .hint { font-size: 11.5px; color: var(--faint); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#binBody { margin-top: .4rem; }
+#binList { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .4rem;
+  max-height: 24vh; overflow-y: auto; }
+.source {
+  display: flex; gap: .5rem; align-items: flex-start; padding: .4rem .5rem;
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--panel);
+}
+.source textarea {
+  flex: 1; min-width: 0; border: 0; outline: 0; resize: vertical; background: transparent;
+  color: var(--ink); font: 12.5px/1.5 var(--mono); min-height: 2.6rem;
+}
+.source .kill {
+  flex: 0 0 auto; width: 20px; height: 20px; padding: 0; line-height: 17px;
+  color: var(--faint); border-color: transparent; background: transparent; font-size: 14px;
+}
+.source .kill:hover { color: var(--error); border-color: var(--error); }
+#binAdd {
+  width: 100%; resize: vertical; padding: .45rem .55rem;
+  border: 1px dashed var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink);
   font: 12.5px/1.5 var(--mono); outline: 0;
 }
-.notes textarea:focus { border-color: var(--sel); }
+#binAdd:focus { border-style: solid; border-color: var(--sel); }
 
 /* --- critique ----------------------------------------------------------- */
 .critique { border-left: 1px solid var(--rule); background: var(--panel);

@@ -49,8 +49,7 @@ async function review(slug: string, slideId: string, firm: boolean): Promise<voi
   const deck = store.readDeck(slug);
   const slide = deck.slides.find((s) => s.id === slideId);
   if (!slide) return;
-  const anything = slide.els.some((e) => e.type === "text" && e.text.trim()) || slide.notes.trim();
-  if (!anything) return;
+  if (!slide.els.some((e) => e.type === "text" && e.text.trim())) return;
 
   const key = slideKey(slide);
   const d = open(slug, deck.title);
@@ -59,7 +58,7 @@ async function review(slug: string, slideId: string, firm: boolean): Promise<voi
   push(slug, "reviewing", { slideKey: key });
 
   try {
-    const findings = await d.critic.review(slide, firm);
+    const findings = await d.critic.review(slide, deck.sources ?? [], firm);
     const state = store.prune(deck, store.readState(slug));
     // An advisory pass never clears a firm pass's findings: you paused
     // mid-sentence, which is not evidence the slide got better.

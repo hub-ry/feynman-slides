@@ -38,9 +38,18 @@
       <div id="canvas"></div>
       <div id="guides"></div>
     </div>
-    <div class="notes">
-      <label for="notes">source material <span class="hint">the critic checks you against this. it is never shown on the slide.</span></label>
-      <textarea id="notes" spellcheck="false" placeholder="Paste the lecture slide or textbook passage this slide is drawn from."></textarea>
+    <div class="bin">
+      <div class="bin-head">
+        <button id="binToggle" class="ghost" aria-expanded="false">
+          <span class="caret">&rsaquo;</span> source material <span id="binCount" class="count"></span>
+        </button>
+        <span class="hint">for the whole deck. the critic checks every slide against all of it, and none of it is shown on a slide.</span>
+      </div>
+      <div id="binBody" hidden>
+        <div id="binList"></div>
+        <textarea id="binAdd" spellcheck="false" rows="2"
+          placeholder="Paste a lecture slide, a passage, a definition. Enter to add, shift+enter for a new line."></textarea>
+      </div>
     </div>
   </section>
 

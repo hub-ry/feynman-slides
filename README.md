@@ -22,25 +22,27 @@ No API key. It reuses your `claude` CLI login through the Agent SDK.
 
 ## The loop
 
-Write markdown in the left pane. Slides are `##` headings, bullets are the
-body, a `>` blockquote is source material.
+Build slides on a canvas: text boxes and images placed, dragged and resized
+wherever you want them. A text box is a **Title** or it is **Normal** - that is
+the whole typography system, because every knob offered while you are writing a
+slide is a decision you make instead of thinking about whether the slide is
+true.
 
-```markdown
-# Data Structures
+The critic fires twice: **when you pause** for two seconds while typing, and
+**when you finish** with a text box. The pause is advisory - a half-typed
+bullet is not a finding. Finishing is the firm pass.
 
-## Hash tables
-- The key is turned into a number, and that number is reduced to an index
+### The source bin
 
-> Paste your lecture slide or textbook passage here.
-```
+Drop your lecture slides, passages and definitions into the bin under the
+canvas. It belongs to the **whole deck**, not to one slide: source material
+does not divide neatly, and the definition you pasted while writing slide 2 is
+exactly what the critic needs on slide 9. Every slide is checked against all of
+it.
 
-The critic fires twice: **when you pause** for two seconds inside a slide, and
-**when you leave** that slide for another. The pause is advisory - a half-typed
-bullet is not a finding. Leaving is the firm pass.
-
-Paste source material and the critic checks you against it. Leave it out and it
-falls back on its own knowledge and labels every finding `knowledge`, so you
-know when it is arguing with your professor's notation rather than with you.
+Leave the bin empty and the critic falls back on its own knowledge, labelling
+every finding `knowledge` so you can tell when it is arguing with your
+professor's notation rather than with you.
 
 ## The three severities
 
@@ -66,18 +68,26 @@ restart.
 A one-click dismiss would not be a forcing function. Writing down why a
 correction is wrong is the same exercise the deck is for.
 
+## Keys
+
+`T` new text box · double-click to edit · `Enter` edit the selection · arrows
+nudge, `shift` for ten · `backspace` delete · `cmd+Z` undo · paste an image
+straight onto the slide.
+
 ## Export
 
-One self-contained HTML file next to your outline. No accounts, no OAuth, opens
-offline. Refused while anything blocking is open - enforced in the export path,
-not by a disabled button.
+One self-contained HTML file next to your slides, images inlined. No accounts,
+no OAuth, opens offline, and it presents: arrow keys, click, print to PDF.
+Refused while anything blocking is open - enforced in the export path, not by a
+disabled button.
 
 ## Where things live
 
 ```
 ~/.feynman-slides/decks/<slug>/
-  outline.md       the source of truth, editable in any editor
+  deck.json        slides, elements, and the source bin - the source of truth
   critiques.json   open findings and your rejections - disposable
+  images/          what you pasted in
   deck.html        the export
 ```
 

@@ -45,25 +45,37 @@ export type El = TextEl | ImageEl;
 export type Slide = {
   id: string;
   els: El[];
-  /** Source material for this slide. Never rendered; the critic checks you against it. */
-  notes: string;
+};
+
+/** One thing you dropped in the bin: a lecture slide, a passage, a definition. */
+export type Source = {
+  id: string;
+  text: string;
 };
 
 export type Deck = {
   title: string;
   slides: Slide[];
+  /**
+   * The source bin, for the whole deck rather than per slide.
+   *
+   * Source material does not divide neatly by slide - one passage covers three
+   * slides, and a definition you pasted on slide 2 is exactly what the critic
+   * needs on slide 9. It is checked against every slide.
+   */
+  sources: Source[];
 };
 
 export const uid = (): string => Math.random().toString(36).slice(2, 10);
 
 export function blankSlide(): Slide {
-  return { id: uid(), els: [], notes: "" };
+  return { id: uid(), els: [] };
 }
 
 export function blankDeck(title: string): Deck {
   const s = blankSlide();
   s.els.push(text(70, 190, 820, 150, title, "title"));
-  return { title, slides: [s] };
+  return { title, slides: [s], sources: [] };
 }
 
 export function text(
@@ -84,7 +96,13 @@ export function text(
  * Big or bold meant title; everything else was body.
  */
 export function migrate(deck: Deck): Deck {
+  deck.sources ??= [];
   for (const s of deck.slides) {
+    // Notes used to hang off each slide. Everything anyone wrote in one is
+    // source material, so it moves to the bin rather than being dropped.
+    const old = s as Slide & { notes?: string };
+    if (old.notes?.trim()) deck.sources.push({ id: uid(), text: old.notes.trim() });
+    delete old.notes;
     for (const el of s.els) {
       if (el.type !== "text") continue;
       const old = el as TextEl & { size?: number; bold?: boolean; align?: string };
@@ -107,7 +125,7 @@ export function migrate(deck: Deck): Deck {
  * The topmost text box is offered as the title, which is what a heading is on
  * a slide even though nothing here marks it as one.
  */
-export function readable(slide: Slide): { title: string; body: string[]; notes: string } {
+export function readable(slide: Slide): { title: string; body: string[] } {
   const texts = slide.els
     .filter((e): e is TextEl => e.type === "text" && e.text.trim().length > 0)
     .sort((a, b) => a.y - b.y || a.x - b.x);
@@ -117,7 +135,7 @@ export function readable(slide: Slide): { title: string; body: string[]; notes: 
   for (const img of images) {
     if (img.alt.trim()) body.push(`[image: ${img.alt.trim()}]`);
   }
-  return { title: head?.text.split("\n")[0]?.trim() ?? "", body, notes: slide.notes };
+  return { title: head?.text.split("\n")[0]?.trim() ?? "", body };
 }
 
 /** Stable identity for a slide. Its own id, so renaming a heading does not orphan its findings. */
