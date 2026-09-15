@@ -7,29 +7,29 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync, existsSync } from "node:fs";
-import { join, dirname, extname, normalize } from "node:path";
+import { join, dirname, extname, normalize, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse, slideAt, slideKey } from "./outline.ts";
 import { startCritic, type CriticSession, type Finding } from "./critic.ts";
+import { type Deck, slideKey, uid } from "./deck.ts";
 import * as store from "./store.ts";
 import { exportDeck, Blocked } from "./export.ts";
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 
-type Deck = { critic: CriticSession; clients: Set<ServerResponse>; reviewing: Set<string> };
-const decks = new Map<string, Deck>();
+type Live = { critic: CriticSession; clients: Set<ServerResponse>; reviewing: Set<string> };
+const live = new Map<string, Live>();
 
-function open(slug: string, title: string): Deck {
-  let d = decks.get(slug);
+function open(slug: string, title: string): Live {
+  let d = live.get(slug);
   if (!d) {
     d = { critic: startCritic(title), clients: new Set(), reviewing: new Set() };
-    decks.set(slug, d);
+    live.set(slug, d);
   }
   return d;
 }
 
 function push(slug: string, event: string, data: unknown): void {
-  const d = decks.get(slug);
+  const d = live.get(slug);
   if (!d) return;
   const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const c of d.clients) c.write(frame);
@@ -39,34 +39,37 @@ function push(slug: string, event: string, data: unknown): void {
  * Review one slide and broadcast what came back.
  *
  * `firm` is the difference between the two moments the critic fires: a pause
- * while typing (advisory, an unfinished bullet is not a finding) and leaving
- * the slide for another (this is as done as it is getting).
+ * while typing in a text box (advisory - a half-typed bullet is not a finding)
+ * and finishing with that box (this is as done as it is getting).
  *
- * Reviews are deduplicated per slide because a pause and a blur can land at
- * almost the same instant - you stop typing precisely because you are about to
- * click elsewhere - and two sessions reviewing one slide would race to write
- * the same key.
+ * Deduplicated per slide because a pause and a blur land milliseconds apart -
+ * you stop typing precisely because you are about to click elsewhere.
  */
-async function review(slug: string, caret: number, firm: boolean): Promise<void> {
-  const text = store.readOutline(slug);
-  const outline = parse(text);
-  const slide = slideAt(outline, caret);
-  if (!slide || (!slide.bullets.length && !slide.source)) return;
+async function review(slug: string, slideId: string, firm: boolean): Promise<void> {
+  const deck = store.readDeck(slug);
+  const slide = deck.slides.find((s) => s.id === slideId);
+  if (!slide) return;
+  const anything = slide.els.some((e) => e.type === "text" && e.text.trim()) || slide.notes.trim();
+  if (!anything) return;
 
   const key = slideKey(slide);
-  const d = open(slug, outline.title);
+  const d = open(slug, deck.title);
   if (d.reviewing.has(key)) return;
   d.reviewing.add(key);
   push(slug, "reviewing", { slideKey: key });
 
   try {
     const findings = await d.critic.review(slide, firm);
-    const state = store.prune(slug, store.readState(slug));
+    const state = store.prune(deck, store.readState(slug));
     // An advisory pass never clears a firm pass's findings: you paused
     // mid-sentence, which is not evidence the slide got better.
     if (firm || findings.length) state.findings[key] = findings;
     store.writeState(slug, state);
-    push(slug, "findings", { slideKey: key, findings: state.findings[key] ?? [], blocking: store.blocking(state).length });
+    push(slug, "findings", {
+      slideKey: key,
+      findings: state.findings[key] ?? [],
+      blocking: store.blocking(state).length,
+    });
   } catch (err) {
     push(slug, "error", { message: String(err) });
   } finally {
@@ -75,13 +78,22 @@ async function review(slug: string, caret: number, firm: boolean): Promise<void>
   }
 }
 
-// --- routes ---------------------------------------------------------------
+// --- plumbing -------------------------------------------------------------
+
+async function raw(req: IncomingMessage, cap = 12 * 1024 * 1024): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let n = 0;
+  for await (const c of req) {
+    n += (c as Buffer).length;
+    if (n > cap) throw new Error("too large");
+    chunks.push(c as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
 
 async function body(req: IncomingMessage): Promise<any> {
-  const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+  const text = (await raw(req)).toString("utf8");
+  return text ? JSON.parse(text) : {};
 }
 
 const json = (res: ServerResponse, code: number, data: unknown) => {
@@ -93,27 +105,32 @@ const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+  ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
 };
 
-function serveStatic(res: ServerResponse, name: string): void {
+function sendFile(res: ServerResponse, path: string, root: string): void {
   // Resolved and then checked, not just checked: `normalize` is what turns
   // `../../etc/passwd` into something a prefix test can actually see.
-  const path = normalize(join(PUBLIC, name));
-  if (!path.startsWith(PUBLIC) || !existsSync(path)) {
+  const full = normalize(path);
+  if (!full.startsWith(root) || !existsSync(full)) {
     res.writeHead(404).end("not found");
     return;
   }
-  res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream" });
-  res.end(readFileSync(path));
+  res.writeHead(200, { "content-type": TYPES[extname(full).toLowerCase()] ?? "application/octet-stream" });
+  res.end(readFileSync(full));
 }
+
+// --- routes ---------------------------------------------------------------
 
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
-  const p = url.pathname;
-  const m = /^\/api\/deck\/([a-z0-9-]+)(\/[a-z]+)?$/.exec(p);
+  const p = decodeURIComponent(url.pathname);
 
-  if (req.method === "GET" && (p === "/" || p === "/index.html")) return serveStatic(res, "index.html");
-  if (req.method === "GET" && !p.startsWith("/api/")) return serveStatic(res, p.slice(1));
+  if (req.method === "GET" && (p === "/" || p === "/index.html"))
+    return sendFile(res, join(PUBLIC, "index.html"), PUBLIC);
+  if (req.method === "GET" && !p.startsWith("/api/"))
+    return sendFile(res, join(PUBLIC, p.slice(1)), PUBLIC);
 
   if (req.method === "GET" && p === "/api/decks") return json(res, 200, store.list());
   if (req.method === "POST" && p === "/api/decks") {
@@ -122,45 +139,60 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return json(res, 200, { slug: store.create(title.trim()) });
   }
 
+  const m = /^\/api\/deck\/([a-z0-9-]+)(?:\/([a-z]+))?(?:\/(.+))?$/.exec(p);
   if (!m) return void res.writeHead(404).end("not found");
   const slug = m[1]!;
   const action = m[2];
+  const rest = m[3];
+
+  if (req.method === "GET" && action === "images" && rest)
+    return sendFile(res, join(store.imageDir(slug), basename(rest)), store.imageDir(slug));
 
   if (req.method === "GET" && !action) {
-    const text = store.readOutline(slug);
-    const state = store.prune(slug, store.readState(slug));
-    return json(res, 200, { text, outline: parse(text), state, blocking: store.blocking(state).length });
+    const deck = store.readDeck(slug);
+    const state = store.prune(deck, store.readState(slug));
+    return json(res, 200, { deck, state, blocking: store.blocking(state).length });
   }
 
-  if (req.method === "GET" && action === "/events") {
+  if (req.method === "GET" && action === "events") {
     res.writeHead(200, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
     });
     res.write(": connected\n\n");
-    const d = open(slug, parse(store.readOutline(slug)).title);
+    const d = open(slug, store.readDeck(slug).title);
     d.clients.add(res);
     req.on("close", () => d.clients.delete(res));
     return;
   }
 
-  if (req.method === "POST" && action === "/outline") {
-    const { text } = await body(req);
-    if (typeof text !== "string") return json(res, 400, { error: "text required" });
-    store.writeOutline(slug, text);
+  if (req.method === "POST" && action === "deck") {
+    const deck = (await body(req)) as Deck;
+    if (!deck?.slides) return json(res, 400, { error: "not a deck" });
+    store.writeDeck(slug, deck);
     return json(res, 200, { ok: true });
   }
 
-  if (req.method === "POST" && action === "/review") {
-    const { caret, firm } = await body(req);
-    // Deliberately not awaited: the review takes seconds and the editor must
-    // not wait on it. Results arrive over SSE.
-    void review(slug, Number(caret) || 0, Boolean(firm));
+  if (req.method === "POST" && action === "review") {
+    const { slideId, firm } = await body(req);
+    // Deliberately not awaited: a review takes seconds and the editor must
+    // never wait on it. Results arrive over SSE.
+    void review(slug, String(slideId), Boolean(firm));
     return json(res, 202, { ok: true });
   }
 
-  if (req.method === "POST" && action === "/dismiss") {
+  if (req.method === "POST" && action === "image") {
+    const type = String(req.headers["content-type"] ?? "");
+    const ext = Object.entries(TYPES).find(([, v]) => v === type)?.[0];
+    if (!ext) return json(res, 415, { error: `unsupported image type: ${type || "none"}` });
+    const bytes = await raw(req);
+    const name = `${uid()}${ext}`;
+    store.saveImage(slug, name, bytes);
+    return json(res, 200, { src: name });
+  }
+
+  if (req.method === "POST" && action === "dismiss") {
     const { id, reason } = await body(req);
     if (!reason?.trim()) {
       // The whole point of the hatch. A dismissal you can make with one click
@@ -178,17 +210,16 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     hit.dismissed = { reason: reason.trim(), at: new Date().toISOString() };
     state.dismissed.push(hit);
     store.writeState(slug, state);
-    decks.get(slug)?.critic.dismissed(hit, reason.trim());
+    live.get(slug)?.critic.dismissed(hit, reason.trim());
     return json(res, 200, { blocking: store.blocking(state).length });
   }
 
-  if (req.method === "POST" && action === "/export") {
-    const text = store.readOutline(slug);
-    const state = store.prune(slug, store.readState(slug));
+  if (req.method === "POST" && action === "export") {
+    const deck = store.readDeck(slug);
+    const state = store.prune(deck, store.readState(slug));
     store.writeState(slug, state);
     try {
-      const out = exportDeck(join(store.DECKS, slug), parse(text), state);
-      return json(res, 200, { path: out });
+      return json(res, 200, { path: exportDeck(slug, store.dir(slug), deck, state) });
     } catch (err) {
       if (err instanceof Blocked) return json(res, 409, { error: err.message, findings: err.findings });
       throw err;
@@ -220,8 +251,6 @@ export function serve(port: number): Promise<number> {
     server.once("error", (err: NodeJS.ErrnoException) => {
       reject(err.code === "EADDRINUSE" ? new PortTaken(port) : err);
     });
-    server.listen(port, "127.0.0.1", () => {
-      resolve((server.address() as { port: number }).port);
-    });
+    server.listen(port, "127.0.0.1", () => resolve((server.address() as { port: number }).port));
   });
 }

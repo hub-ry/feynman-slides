@@ -13,8 +13,8 @@
 
 import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import type { Slide } from "./outline.ts";
-import { render } from "./outline.ts";
+import type { Slide } from "./deck.ts";
+import { readable, slideKey } from "./deck.ts";
 
 export type Severity = "error" | "jargon" | "note";
 
@@ -185,7 +185,7 @@ export function startCritic(deckTitle: string): CriticSession {
 
   function reviewOne(slide: Slide, firm: boolean): Promise<Finding[]> {
     if (closed) return Promise.resolve([]);
-    currentKey = `${slide.index}:${slide.title.trim().toLowerCase()}`;
+    currentKey = slideKey(slide);
     const bar = firm
       ? "They just left this slide, so it is as finished as it is going to get. Review it properly."
       : "They paused while typing in this slide. It is IN PROGRESS. Only speak up for something clearly wrong; an unfinished bullet is not a finding.";
@@ -238,4 +238,20 @@ function userTurn(text: string) {
     message: { role: "user" as const, content: text },
     parent_tool_use_id: null,
   };
+}
+
+/**
+ * What one slide looks like to the critic.
+ *
+ * Reading order rather than array order, and images appear only through their
+ * alt text - the critic cannot see a picture, and a slide whose whole argument
+ * is in an unlabelled diagram should read as a slide with nothing on it.
+ */
+function render(slide: Slide): string {
+  const { title, body, notes } = readable(slide);
+  const lines = body.length ? body.map((b) => `- ${b}`).join("\n") : "(nothing written yet)";
+  const source = notes.trim()
+    ? `SOURCE MATERIAL THEY PASTED (check them against THIS):\n${notes.trim()}`
+    : "SOURCE MATERIAL: none given. Fall back on your own knowledge and mark every finding basis=knowledge.";
+  return `SLIDE HEADING: ${title || "(none)"}\n\nTEXT ON THE SLIDE:\n${lines}\n\n${source}`;
 }

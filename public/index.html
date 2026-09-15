@@ -7,10 +7,25 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
 <header>
   <span class="mark">feynman-slides</span>
   <select id="picker" aria-label="deck"></select>
   <button id="new" class="ghost">new deck</button>
+  <span class="sep"></span>
+
+  <button id="addText" title="Add a text box (T)">text</button>
+  <button id="addImage" title="Add an image (or just paste one)">image</button>
+
+  <span class="sep"></span>
+  <div id="textTools" class="tools" hidden>
+    <button id="bold" title="Bold (cmd+B)"><b>B</b></button>
+    <button id="smaller" title="Smaller">A&minus;</button>
+    <button id="bigger" title="Bigger">A+</button>
+    <button id="align" title="Align">left</button>
+  </div>
+  <button id="del" class="danger" title="Delete (backspace)" hidden>delete</button>
+
   <span class="spacer"></span>
   <span id="status" class="status"></span>
   <span id="gate" class="gate" hidden></span>
@@ -18,16 +33,23 @@
 </header>
 
 <main>
-  <section class="pane editor">
-    <textarea id="outline" spellcheck="false" placeholder="Pick a deck to start writing."></textarea>
-    <footer id="where"></footer>
+  <nav id="rail" aria-label="slides"></nav>
+
+  <section class="stage-wrap">
+    <div id="stage">
+      <div id="canvas"></div>
+      <div id="guides"></div>
+    </div>
+    <div class="notes">
+      <label for="notes">source material <span class="hint">the critic checks you against this. it is never shown on the slide.</span></label>
+      <textarea id="notes" spellcheck="false" placeholder="Paste the lecture slide or textbook passage this slide is drawn from."></textarea>
+    </div>
   </section>
 
-  <section class="pane critique">
-    <div id="findings"></div>
-  </section>
+  <aside class="critique"><div id="findings"></div></aside>
 </main>
 
+<input type="file" id="file" accept="image/*" hidden>
 <script type="module" src="app.js"></script>
 </body>
 </html>
