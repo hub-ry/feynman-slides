@@ -392,6 +392,27 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return json(res, 200, { blocking: store.blocking(state).length });
   }
 
+  if (req.method === "GET" && action === "export") {
+    const deck = store.readDeck(slug);
+    const state = store.prune(deck, store.readState(slug));
+    const isDownload = url.searchParams.get("download") === "1";
+    let filePath = join(store.dir(slug), "deck.html");
+    if (!existsSync(filePath)) {
+      try {
+        filePath = exportDeck(slug, store.dir(slug), deck, state);
+      } catch (err) {
+        if (err instanceof Blocked) return json(res, 409, { error: err.message, findings: err.findings });
+        throw err;
+      }
+    }
+    const htmlBytes = readFileSync(filePath);
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      ...(isDownload ? { "content-disposition": `attachment; filename="${slug}.html"` } : {}),
+    });
+    return void res.end(htmlBytes);
+  }
+
   if (req.method === "POST" && action === "export") {
     const deck = store.readDeck(slug);
     const state = store.prune(deck, store.readState(slug));

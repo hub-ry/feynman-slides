@@ -75,11 +75,15 @@ img.el { object-fit:contain; }
 #bar { position:fixed; bottom:1.1rem; left:50%; transform:translateX(-50%);
   color:#8b929b; font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.1em;
   user-select:none; }
+@page {
+  size: 960px 540px;
+  margin: 0;
+}
 @media print {
-  body { background:#fff; display:block; overflow:visible; }
+  html, body { background:#fff !important; width:960px; height:540px; margin:0; padding:0; overflow:visible; }
   #stage { transform:none !important; width:${W}px; height:${H}px; }
-  .slide { display:block !important; position:relative; page-break-after:always; box-shadow:none; }
-  #bar { display:none; }
+  .slide { display:block !important; position:relative; width:960px; height:540px; page-break-after:always; break-after:page; box-shadow:none; }
+  #bar { display:none !important; }
 }
 `;
 

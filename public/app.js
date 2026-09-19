@@ -435,11 +435,74 @@ $("deleteDeck").onclick = async () => {
 };
 $("saveAsTemplate").onclick = () => openTemplates("make");
 
+let exportDialog = null;
+
+export function openExportModal(slug, title) {
+  if (exportDialog) exportDialog.remove();
+
+  const dialog = document.createElement("dialog");
+  dialog.className = "sheet export-modal";
+  dialog.innerHTML = `
+    <header class="export-modal-header">
+      <div>
+        <h2>Export Deck</h2>
+        <p class="export-subhead">${title}</p>
+      </div>
+      <div class="export-actions">
+        <a href="/api/deck/${slug}/export?download=1" download="${slug}.html" class="export-btn primary">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Download HTML
+        </a>
+        <button type="button" class="export-btn" id="exportPrintPdf">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>
+          Print / PDF
+        </button>
+        <a href="/api/deck/${slug}/export" target="_blank" class="export-btn">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+          Open New Tab
+        </a>
+        <button type="button" class="export-close" aria-label="Close">×</button>
+      </div>
+    </header>
+    <div class="export-preview-wrap">
+      <iframe class="export-preview-iframe" src="/api/deck/${slug}/export" title="Export Preview"></iframe>
+    </div>
+  `;
+
+  const iframe = dialog.querySelector("iframe");
+  const printBtn = dialog.querySelector("#exportPrintPdf");
+  if (printBtn) {
+    printBtn.onclick = () => {
+      try {
+        iframe?.contentWindow?.focus();
+        iframe?.contentWindow?.print();
+      } catch {
+        window.open(`/api/deck/${slug}/export`, "_blank");
+      }
+    };
+  }
+
+  const closeBtn = dialog.querySelector(".export-close");
+  if (closeBtn) closeBtn.onclick = () => dialog.close();
+  dialog.onclose = () => { dialog.remove(); exportDialog = null; };
+
+  document.body.append(dialog);
+  exportDialog = dialog;
+  dialog.showModal();
+}
+
 async function doExport() {
   if ($("export").disabled) return;
   const { ok, data } = await api("/export", { method: "POST" });
-  if (ok) say(`wrote ${data.path}`);
-  else { say(data.error ?? "export refused"); S.blocking = data.findings?.length ?? 1; paintGate(); }
+  if (ok) {
+    say(`Exported ${S.deck.title}`);
+    openExportModal(S.slug, S.deck.title);
+  } else {
+    say(data.error ?? "export refused");
+    S.blocking = data.findings?.length ?? 1;
+    paintGate();
+    toggleCritic(true);
+  }
 }
 $("export").onclick = doExport;
 

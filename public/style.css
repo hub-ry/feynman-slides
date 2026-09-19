@@ -889,3 +889,107 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 .critic-mode-toggle:hover {
   background: var(--hover); color: var(--ink); border-color: var(--dim);
 }
+
+/* --- export modal & previewer -------------------------------------------- */
+.export-modal {
+  width: min(92vw, 1040px);
+  max-width: 1040px;
+  height: min(88vh, 700px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+}
+.export-modal::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+.export-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .85rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+.export-modal-header h2 {
+  font-size: 16.5px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+.export-subhead {
+  font-size: 12px;
+  color: var(--dim);
+  margin: 2px 0 0;
+}
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: 12px;
+  font-weight: 550;
+  padding: .35rem .75rem;
+  border-radius: 6px;
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all .1s ease;
+}
+.export-btn:hover {
+  background: var(--hover);
+  border-color: var(--dim);
+}
+.export-btn.primary {
+  background: var(--sel);
+  color: #fff;
+  border-color: transparent;
+}
+.export-btn.primary:hover {
+  background: color-mix(in srgb, var(--sel) 85%, black);
+}
+.export-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+  margin-left: .25rem;
+}
+.export-close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.export-preview-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #0b0c0e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.export-preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
