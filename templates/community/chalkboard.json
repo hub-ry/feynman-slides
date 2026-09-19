@@ -1,0 +1,281 @@
+{
+  "id": "chalkboard",
+  "name": "Chalkboard",
+  "author": "community",
+  "version": "1.0.0",
+  "description": "Dark slate chalkboard paper with soft chalk white ink, amber accents, and an editorial classroom lecture aesthetic.",
+  "palette": {
+    "paper": "#1a2421",
+    "ink": "#f1f5f3",
+    "muted": "#82958e",
+    "accent": "#facc15"
+  },
+  "roles": {
+    "title": {
+      "family": "ui-serif, \"Iowan Old Style\", \"Palatino Linotype\", Palatino, Georgia, serif",
+      "size": 40,
+      "weight": 600,
+      "line": 1.2,
+      "letter": "-0.01em",
+      "color": "ink",
+      "align": "left"
+    },
+    "body": {
+      "family": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", system-ui, sans-serif",
+      "size": 23,
+      "weight": 400,
+      "line": 1.55,
+      "letter": "0.01em",
+      "color": "ink",
+      "align": "left"
+    },
+    "caption": {
+      "family": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      "size": 14,
+      "weight": 400,
+      "line": 1.4,
+      "letter": "0.04em",
+      "color": "muted",
+      "align": "left"
+    },
+    "chalk": {
+      "family": "ui-serif, \"Iowan Old Style\", \"Palatino Linotype\", Palatino, Georgia, serif",
+      "size": 24,
+      "weight": 500,
+      "line": 1.45,
+      "letter": "0",
+      "color": "accent",
+      "align": "left"
+    }
+  },
+  "layouts": [
+    {
+      "id": "title",
+      "name": "Title",
+      "els": [
+        {
+          "type": "text",
+          "role": "caption",
+          "x": 96,
+          "y": 160,
+          "w": 768,
+          "h": 32,
+          "hint": "PHYSICS 101 • LECTURE 07"
+        },
+        {
+          "type": "text",
+          "role": "title",
+          "x": 96,
+          "y": 196,
+          "w": 768,
+          "h": 108,
+          "hint": "Classical Mechanics"
+        },
+        {
+          "type": "shape",
+          "shape": "line",
+          "fill": "accent",
+          "x": 96,
+          "y": 316,
+          "w": 120,
+          "h": 3
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 96,
+          "y": 336,
+          "w": 768,
+          "h": 56,
+          "hint": "Principles of stationary action"
+        }
+      ]
+    },
+    {
+      "id": "title-body",
+      "name": "Title and body",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 56,
+          "w": 816,
+          "h": 76,
+          "hint": "Lemma 1: Conservation of Energy"
+        },
+        {
+          "type": "shape",
+          "shape": "line",
+          "fill": "accent",
+          "x": 72,
+          "y": 142,
+          "w": 88,
+          "h": 3
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 72,
+          "y": 172,
+          "w": 816,
+          "h": 300,
+          "hint": "In any isolated system, total energy remains invariant over time.\n\n- Kinetic + Potential = Constant\n- Work done equals change in kinetic state"
+        }
+      ]
+    },
+    {
+      "id": "theorem",
+      "name": "Theorem and proof",
+      "els": [
+        {
+          "type": "text",
+          "role": "caption",
+          "x": 72,
+          "y": 48,
+          "w": 816,
+          "h": 26,
+          "hint": "FUNDAMENTAL THEOREM"
+        },
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 78,
+          "w": 816,
+          "h": 56,
+          "hint": "Stokes' Theorem"
+        },
+        {
+          "type": "shape",
+          "shape": "rect",
+          "fill": "accent",
+          "x": 72,
+          "y": 148,
+          "w": 4,
+          "h": 80
+        },
+        {
+          "type": "text",
+          "role": "chalk",
+          "x": 92,
+          "y": 154,
+          "w": 796,
+          "h": 70,
+          "hint": "∮ ∂Σ F · dr = ∬ Σ (∇ × F) · dS"
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 72,
+          "y": 250,
+          "w": 816,
+          "h": 220,
+          "hint": "The boundary integral of a vector field equals the surface integral of its curl."
+        }
+      ]
+    },
+    {
+      "id": "two",
+      "name": "Two columns",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 54,
+          "w": 816,
+          "h": 70,
+          "hint": "Derivation Steps"
+        },
+        {
+          "type": "shape",
+          "shape": "line",
+          "fill": "accent",
+          "x": 72,
+          "y": 134,
+          "w": 60,
+          "h": 3
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 72,
+          "y": 160,
+          "w": 384,
+          "h": 310,
+          "hint": "**Step 1: Setup**\nDefine Lagrangian L = T - V.\nApply Euler-Lagrange equations."
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 504,
+          "y": 160,
+          "w": 384,
+          "h": 310,
+          "hint": "**Step 2: Integration**\nCompute canonical momenta.\nHamiltonian H = p q̇ - L."
+        }
+      ]
+    },
+    {
+      "id": "figure",
+      "name": "Figure",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 48,
+          "w": 816,
+          "h": 60,
+          "hint": "Observation Diagram"
+        },
+        {
+          "type": "image",
+          "x": 72,
+          "y": 124,
+          "w": 816,
+          "h": 300
+        },
+        {
+          "type": "text",
+          "role": "caption",
+          "x": 72,
+          "y": 436,
+          "w": 816,
+          "h": 44,
+          "hint": "Chalk diagram rendering"
+        }
+      ]
+    },
+    {
+      "id": "section",
+      "name": "Section",
+      "els": [
+        {
+          "type": "shape",
+          "shape": "line",
+          "fill": "accent",
+          "x": 72,
+          "y": 236,
+          "w": 80,
+          "h": 4
+        },
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 256,
+          "w": 816,
+          "h": 80,
+          "hint": "Part II: Wave Mechanics"
+        }
+      ]
+    },
+    {
+      "id": "blank",
+      "name": "Blank",
+      "els": []
+    }
+  ]
+}

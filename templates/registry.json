@@ -15,6 +15,13 @@
         "accent": "#9a3412"
       },
       "url": "/templates/community/handout.json",
+      "tags": [
+        "study",
+        "reading",
+        "serif",
+        "academic",
+        "editorial"
+      ],
       "repo": "feynman-slides/templates"
     },
     {
@@ -30,6 +37,13 @@
         "accent": "#4ade80"
       },
       "url": "/templates/community/terminal.json",
+      "tags": [
+        "code",
+        "dark",
+        "monospace",
+        "technical",
+        "terminal"
+      ],
       "repo": "feynman-slides/templates"
     },
     {
@@ -45,6 +59,13 @@
         "accent": "#1d4ed8"
       },
       "url": "/templates/community/lecture.json",
+      "tags": [
+        "lecture",
+        "academic",
+        "course",
+        "classroom",
+        "classic"
+      ],
       "repo": "feynman-slides/templates"
     },
     {
@@ -60,7 +81,133 @@
         "accent": "#d946ef"
       },
       "url": "/templates/community/sticky.json",
+      "tags": [
+        "minimal",
+        "cards",
+        "colorful",
+        "brainstorm",
+        "notes"
+      ],
       "repo": "feynman-slides/templates"
+    },
+    {
+      "id": "anki-minimal",
+      "name": "Anki Minimal",
+      "author": "community",
+      "version": "1.0.0",
+      "description": "High contrast active-recall study theme with prompt cues and clear answer cards.",
+      "palette": {
+        "paper": "#101216",
+        "ink": "#f8fafc",
+        "muted": "#8b949e",
+        "accent": "#38bdf8"
+      },
+      "url": "/templates/community/anki-minimal.json",
+      "tags": [
+        "study",
+        "flashcard",
+        "active-recall",
+        "anki",
+        "quiz",
+        "dark"
+      ],
+      "repo": "community"
+    },
+    {
+      "id": "cornell",
+      "name": "Cornell",
+      "author": "community",
+      "version": "1.0.0",
+      "description": "Structured academic note-taking layout with cue column, lecture notes, and bottom summary.",
+      "palette": {
+        "paper": "#fdfbf7",
+        "ink": "#1c1917",
+        "muted": "#78716c",
+        "accent": "#1e40af"
+      },
+      "url": "/templates/community/cornell.json",
+      "tags": [
+        "study",
+        "cornell",
+        "notes",
+        "academic",
+        "cue",
+        "summary",
+        "lecture"
+      ],
+      "repo": "community"
+    },
+    {
+      "id": "pitch-modern",
+      "name": "Pitch Modern",
+      "author": "community",
+      "version": "1.0.0",
+      "description": "Canva-style high-impact pitch deck with bold typography, dark slate indigo paper, vibrant cyan accent, and stat callouts.",
+      "palette": {
+        "paper": "#0b1120",
+        "ink": "#f8fafc",
+        "muted": "#94a3b8",
+        "accent": "#06b6d4"
+      },
+      "url": "/templates/community/pitch-modern.json",
+      "tags": [
+        "pitch",
+        "business",
+        "stats",
+        "startup",
+        "modern",
+        "dark",
+        "canva"
+      ],
+      "repo": "community"
+    },
+    {
+      "id": "chalkboard",
+      "name": "Chalkboard",
+      "author": "community",
+      "version": "1.0.0",
+      "description": "Dark slate chalkboard paper with soft chalk white ink, amber accents, and an editorial classroom lecture aesthetic.",
+      "palette": {
+        "paper": "#1a2421",
+        "ink": "#f1f5f3",
+        "muted": "#82958e",
+        "accent": "#facc15"
+      },
+      "url": "/templates/community/chalkboard.json",
+      "tags": [
+        "lecture",
+        "math",
+        "physics",
+        "chalkboard",
+        "education",
+        "editorial",
+        "dark"
+      ],
+      "repo": "community"
+    },
+    {
+      "id": "swiss",
+      "name": "Swiss Modern",
+      "author": "community",
+      "version": "1.0.0",
+      "description": "Bauhaus and International typographic style with asymmetric grids, heavy grotesque typography, and high contrast red accent.",
+      "palette": {
+        "paper": "#f5f5f0",
+        "ink": "#0a0a0a",
+        "muted": "#525252",
+        "accent": "#dc2626"
+      },
+      "url": "/templates/community/swiss.json",
+      "tags": [
+        "swiss",
+        "bauhaus",
+        "design",
+        "typography",
+        "asymmetric",
+        "minimal",
+        "editorial"
+      ],
+      "repo": "community"
     }
   ]
 }
