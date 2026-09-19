@@ -38,6 +38,7 @@ export type Card = {
   slug: string;
   title: string;
   template: string;
+  folder?: string;
   slides: number;
   blocking: number;
   updated: number;
@@ -61,6 +62,7 @@ export function list(): Card[] {
         slug: e.name,
         title: deck.title,
         template: deck.template ?? "feynman",
+        folder: deck.folder?.trim() || undefined,
         slides: deck.slides.length,
         first: deck.slides[0]?.els ?? [],
         blocking: blocking(readState(e.name)).length,
@@ -70,7 +72,60 @@ export function list(): Card[] {
     .sort((a, b) => b.updated - a.updated);
 }
 
-export function create(title: string, template = "feynman", titleLayout?: unknown): string {
+const foldersPath = join(HOME, "folders.json");
+
+export function listFolders(): string[] {
+  const custom: string[] = existsSync(foldersPath)
+    ? JSON.parse(readFileSync(foldersPath, "utf8"))
+    : [];
+  const fromDecks = list().map((c) => c.folder).filter((f): f is string => Boolean(f));
+  const set = new Set([...custom, ...fromDecks]);
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+export function createFolder(name: string): void {
+  const n = name.trim();
+  if (!n) return;
+  const current = listFolders();
+  if (!current.includes(n)) {
+    current.push(n);
+    writeFileSync(foldersPath, JSON.stringify(current.sort((a, b) => a.localeCompare(b)), null, 2) + "\n");
+  }
+}
+
+export function deleteFolder(name: string): void {
+  const n = name.trim();
+  for (const card of list()) {
+    if (card.folder === n) setFolder(card.slug, undefined);
+  }
+  const custom: string[] = existsSync(foldersPath)
+    ? JSON.parse(readFileSync(foldersPath, "utf8"))
+    : [];
+  const next = custom.filter((f) => f !== n);
+  writeFileSync(foldersPath, JSON.stringify(next, null, 2) + "\n");
+}
+
+export function renameFolder(oldName: string, newName: string): void {
+  const from = oldName.trim();
+  const to = newName.trim();
+  if (!from || !to || from === to) return;
+  for (const card of list()) {
+    if (card.folder === from) setFolder(card.slug, to);
+  }
+  const custom: string[] = existsSync(foldersPath)
+    ? JSON.parse(readFileSync(foldersPath, "utf8"))
+    : [];
+  const next = custom.map((f) => (f === from ? to : f));
+  if (!next.includes(to)) next.push(to);
+  writeFileSync(foldersPath, JSON.stringify([...new Set(next)].sort((a, b) => a.localeCompare(b)), null, 2) + "\n");
+}
+
+export function create(
+  title: string,
+  template = "feynman",
+  titleLayout?: unknown,
+  folder?: string,
+): string {
   let slug = slugify(title);
   // Two decks called "Hash tables" are two decks, not one: without this the
   // second one opens the first, and you lose an afternoon before you notice.
@@ -80,8 +135,17 @@ export function create(title: string, template = "feynman", titleLayout?: unknow
     slug = `${slug}-${n}`;
   }
   mkdirSync(dir(slug), { recursive: true });
-  writeDeck(slug, blankDeck(title, template, titleLayout));
+  writeDeck(slug, blankDeck(title, template, titleLayout, folder));
+  if (folder?.trim()) createFolder(folder.trim());
   return slug;
+}
+
+/** Assign a deck to a folder or clear it. */
+export function setFolder(slug: string, folder?: string): void {
+  const deck = readDeck(slug);
+  deck.folder = folder?.trim() || undefined;
+  writeDeck(slug, deck);
+  if (folder?.trim()) createFolder(folder.trim());
 }
 
 /** Rename in place. The slug is the deck's address - changing it would break its images. */

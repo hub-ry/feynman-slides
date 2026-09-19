@@ -84,6 +84,8 @@ export type Deck = {
   slides: Slide[];
   /** The installed template this deck is drawn with. */
   template?: string;
+  /** An optional folder or class this deck belongs to. */
+  folder?: string;
   /**
    * The source bin, for the whole deck rather than per slide.
    *
@@ -101,7 +103,12 @@ export function blankSlide(): Slide {
 }
 
 /** The first slide is the title layout with the deck's name already in it. */
-export function blankDeck(title: string, template = "feynman", titleLayout?: unknown): Deck {
+export function blankDeck(
+  title: string,
+  template = "feynman",
+  titleLayout?: unknown,
+  folder?: string,
+): Deck {
   const s = blankSlide();
   s.layout = "title";
   if (titleLayout) {
@@ -111,7 +118,13 @@ export function blankDeck(title: string, template = "feynman", titleLayout?: unk
   } else {
     s.els = [text(96, 186, 768, 120, title, "title")];
   }
-  return { title, template, slides: [s], sources: [] };
+  return {
+    title,
+    template,
+    ...(folder ? { folder } : {}),
+    slides: [s],
+    sources: [],
+  };
 }
 
 export function text(

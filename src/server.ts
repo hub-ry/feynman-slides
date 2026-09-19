@@ -145,11 +145,44 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (req.method === "GET" && p === "/api/decks") return json(res, 200, store.list());
   if (req.method === "POST" && p === "/api/decks") {
-    const { title, template } = await body(req);
+    const { title, template, folder } = await body(req);
     if (!title?.trim()) return json(res, 400, { error: "a deck needs a title" });
     const t = templates.get(String(template ?? "feynman"));
     const first = t.layouts.find((l: { id: string }) => l.id === "title") ?? t.layouts[0];
-    return json(res, 200, { slug: store.create(title.trim(), t.id, first) });
+    return json(res, 200, {
+      slug: store.create(
+        title.trim(),
+        t.id,
+        first,
+        folder ? String(folder).trim() : undefined,
+      ),
+    });
+  }
+
+  // --- folders ------------------------------------------------------------
+
+  if (req.method === "GET" && p === "/api/folders")
+    return json(res, 200, { folders: store.listFolders() });
+
+  if (req.method === "POST" && p === "/api/folders") {
+    const { name } = await body(req);
+    if (!name?.trim()) return json(res, 400, { error: "folder needs a name" });
+    store.createFolder(String(name).trim());
+    return json(res, 200, { ok: true, folders: store.listFolders() });
+  }
+
+  if (req.method === "POST" && p === "/api/folders/delete") {
+    const { name } = await body(req);
+    if (!name?.trim()) return json(res, 400, { error: "folder name required" });
+    store.deleteFolder(String(name).trim());
+    return json(res, 200, { ok: true, folders: store.listFolders() });
+  }
+
+  if (req.method === "POST" && p === "/api/folders/rename") {
+    const { from, to } = await body(req);
+    if (!from?.trim() || !to?.trim()) return json(res, 400, { error: "names required" });
+    store.renameFolder(String(from).trim(), String(to).trim());
+    return json(res, 200, { ok: true, folders: store.listFolders() });
   }
 
   // --- templates ----------------------------------------------------------
@@ -262,6 +295,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     live.delete(slug);
     store.deleteDeck(slug);
     return json(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && action === "folder") {
+    const { folder } = await body(req);
+    store.setFolder(slug, folder ? String(folder).trim() : undefined);
+    return json(res, 200, { ok: true, folder: store.readDeck(slug).folder });
   }
 
   if (req.method === "POST" && action === "review") {
