@@ -10,7 +10,7 @@
 import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Slide, Source } from "./deck.ts";
-import { readable, slideKey } from "./deck.ts";
+import { readable, slideKey, uid } from "./deck.ts";
 import { type CriticConfig, readCriticConfig } from "./store.ts";
 
 export type Severity = "error" | "jargon" | "note";
@@ -87,12 +87,22 @@ export type CriticSession = {
   dismissed(finding: Finding, reason: string): void;
   close(): void;
   mode(): string;
+  /** The provider that will actually run, after resolution and any fallback. */
   provider(): CriticProvider;
   setMode(mode: CriticProvider): void;
   setConfig(config: CriticConfig): void;
 };
 
-// Patterns where technical terms are substituted for an actual explanation
+/**
+ * Where a name might be standing in for a mechanism.
+ *
+ * These only say "a label was used". They do not say the label was used
+ * INSTEAD of an explanation, which is the actual test in the contract, and
+ * the difference is the whole finding: "the scheduler picks whichever thread
+ * has run least, then lets it run until another thread falls further behind"
+ * names a scheduler and explains one. `explains()` below is what separates
+ * them, and it is why these patterns are allowed to be broad.
+ */
 const JARGON_PATTERNS: Array<{ regex: RegExp; term: string }> = [
   { regex: /(?:uses?|using|via|with|through|leverages?|employs?|relies on)\s+(?:an?|the)?\s*(B-?tree|hash\s*(?:table|map|function)|scheduler|consensus|raft|paxos|CRDT|vector\s*clock|blockchain|neural\s*network|AI|machine\s*learning|deep\s*learning|heuristics?|dynamic\s*programming|memoization|garbage\s*collect(?:ion|or)|microservices?|kubernetes|quantum|bloom\s*filter|lsm\s*tree|trie|red-black\s*tree)/i, term: "$1" },
   { regex: /\b(B-?tree|hash\s*(?:table|map)|raft|paxos|CRDT|bloom\s*filter|scheduler|garbage\s*collector|LSM\s*tree)\b/i, term: "$1" },
@@ -100,6 +110,47 @@ const JARGON_PATTERNS: Array<{ regex: RegExp; term: string }> = [
   { regex: /(?:because|since|as)\s+(?:it(?:'s|\s+is)?\s+)?(balanced|distributed|asynchronous|decentralized|atomic|idempotent|stateless|fault-tolerant)\b/i, term: "$1" },
   { regex: /(?:handled|managed|solved|fixed|done|processed)\s+(?:by|in)\s+(?:the\s+)?([a-z0-9_-]+)/i, term: "$1" },
 ];
+
+/**
+ * Verbs that describe something happening to something.
+ *
+ * An explanation says what moves where. A label says what the thing is
+ * called. Counting these is a crude stand-in for the difference, but it is
+ * the right crude stand-in: it is blind to how technical the vocabulary is,
+ * which is exactly the mistake the contract warns against.
+ */
+const MECHANISM = /\b(stores?|stored|holds?|keeps?|moves?|copies|copied|splits?|merges?|compares?|computes?|calculates?|counts?|scans?|walks?|points?|links?|chains?|maps?|hashes|rehash(?:es)?|doubles?|halves?|grows?|shrinks?|swaps?|reads?|writes?|appends?|inserts?|removes?|deletes?|sorts?|orders?|picks?|chooses?|waits?|blocks?|retries|retr(?:y|ies)|sends?|receives?|checks?|marks?|frees?|allocates?|evicts?|caches?|buckets?|probes?|collides?|steps?|loops?|repeats?|multiplies|divides?|adds?|subtracts?)\b/i;
+
+/** Words that carry no explanation on their own, so they should not count as one. */
+const FILLER = new Set([
+  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "it", "its",
+  "this", "that", "these", "those", "and", "or", "but", "of", "in", "on", "to", "for",
+  "with", "as", "by", "at", "from", "we", "you", "they", "can", "will", "very", "also",
+]);
+
+/**
+ * Does the slide actually explain the term it just named?
+ *
+ * The contract's test is whether deleting the word would remove the only
+ * explanation on the slide - so this looks at the whole slide, not the one
+ * line. Someone who names a B-tree in the heading and spends four bullets on
+ * how it splits a full node has explained it, and telling them otherwise
+ * teaches them to scroll past the critic.
+ */
+function explains(allLines: string[], term: string): boolean {
+  const label = term.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const rest = allLines
+    .join(" ")
+    .toLowerCase()
+    .split(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*"), "g"))
+    .join(" ");
+
+  if (!MECHANISM.test(rest)) return false;
+  const content = rest.split(/\s+/).filter((w) => w.length > 2 && !FILLER.has(w));
+  // One mechanism verb in a five-word slide is a coincidence. Ten content
+  // words around it is someone explaining something.
+  return content.length >= 12;
+}
 
 const ABSOLUTE_CLAIMS = [
   /\b(100%\s+uptime|100%\s+reliable|100%\s+secure|zero\s+latency|zero-latency|zero\s+overhead|completely\s+bug-free|impossible\s+to\s+fail|guaranteed\s+never\s+fails?|zero\s+downtime|unbreakable|infinite\s+scalability|infinitely\s+scalable)\b/i,
@@ -127,10 +178,8 @@ export function heuristicReview(
   firm: boolean,
   dismissedQuotes: Set<string> = new Set(),
   slideKeyStr: string = "",
-  seqStart: number = 0,
 ): Finding[] {
   const findings: Finding[] = [];
-  let seq = seqStart;
 
   const { title, body } = readable(slide);
   const allLines = [title, ...body].map((s) => s.trim()).filter(Boolean);
@@ -139,20 +188,14 @@ export function heuristicReview(
   const totalWords = allLines.reduce((acc, l) => acc + l.split(/\s+/).length, 0);
   const sourcesText = sources.map((s) => s.text).join("\n").toLowerCase();
 
-  const isDismissed = (quote: string) => {
-    const q = quote.toLowerCase().trim();
-    for (const d of dismissedQuotes) {
-      if (d === q || q.includes(d) || d.includes(q)) return true;
-    }
-    return false;
-  };
+  const isDismissed = (quote: string) => sameClaim(quote, dismissedQuotes);
 
   // 1. Check overstuffed slide / cognitive overload (note)
   if (body.length >= 6) {
-    const quote = body[body.length - 1] ?? title ?? "Slide content";
+    const quote = title || body[0] || "";
     if (!isDismissed(quote)) {
       findings.push({
-        id: `f${++seq}`,
+        id: uid(),
         severity: "note",
         quote,
         problem: `Slide holds too many distinct points (${body.length} items). Feynman slides work best when a single slide teaches one crisp idea.`,
@@ -165,7 +208,7 @@ export function heuristicReview(
     const quote = title || body[0] || "Slide content";
     if (!isDismissed(quote)) {
       findings.push({
-        id: `f${++seq}`,
+        id: uid(),
         severity: "note",
         quote,
         problem: `Slide is crowded (~${totalWords} words). A slide that looks like a wall of text is difficult to review during active recall.`,
@@ -177,6 +220,7 @@ export function heuristicReview(
   }
 
   // 2. Line-by-line checks
+  const settled = new Set<string>(); // lines that already carry a finding
   for (const line of allLines) {
     if (isDismissed(line)) continue;
 
@@ -191,8 +235,9 @@ export function heuristicReview(
       const match = pat.exec(line);
       if (match) {
         foundAbsolute = true;
+        settled.add(line);
         findings.push({
-          id: `f${++seq}`,
+          id: uid(),
           severity: "error",
           quote: line,
           problem: `Makes an absolute claim ("${match[0]}"). In distributed systems, computing, and physics, zero latency or 100% reliability are physically impossible.`,
@@ -211,8 +256,9 @@ export function heuristicReview(
       for (const pair of CONTRADICTION_PAIRS) {
         if (pair.slide.test(line) && pair.source.test(sourcesText)) {
           foundContradiction = true;
+          settled.add(line);
           findings.push({
-            id: `f${++seq}`,
+            id: uid(),
             severity: "error",
             quote: line,
             problem: `Contradicts the source material in the bin (${pair.label}).`,
@@ -225,26 +271,49 @@ export function heuristicReview(
       }
       if (foundContradiction) continue;
     }
+  }
 
-    // Feynman Jargon test (jargon)
+  // 3. The Feynman jargon test, as the contract states it: not "is this word
+  //    technical" but "would deleting it remove the only explanation here".
+  //
+  //    One finding per TERM, not per line. A slide headed "The scheduler" with
+  //    a bullet ending "...picked by the scheduler" used to produce two
+  //    findings saying the same thing, and a critic that says it twice is a
+  //    critic you learn to scroll past. The longest line naming the term wins,
+  //    because that is the sentence with room for the explanation in it.
+  //    A dispute settles the TERM, not the sentence. Rejecting "picked by the
+  //    scheduler" and then being told the same thing about the heading two
+  //    seconds later is the critic arguing rather than listening.
+  const named = new Map<string, { best: string; rejected: boolean }>();
+  for (const line of allLines) {
+    if (settled.has(line)) continue;
+    if (!firm && (line.length < 18 || /\b(and|the|with|in|to|for|or|of|by)$/i.test(line))) continue;
+
     for (const pat of JARGON_PATTERNS) {
       const match = pat.regex.exec(line);
-      if (match) {
-        const term = match[1] || match[0];
-        if (line.split(/\s+/).length < 16 || /(?:uses?|using|via|with|through|handled by|managed by|because)\s+/i.test(line)) {
-          findings.push({
-            id: `f${++seq}`,
-            severity: "jargon",
-            quote: line,
-            problem: `Names "${term}" in place of an explanation. Deleting this term would remove the only explanation on the slide. Naming is not understanding.`,
-            fix_hint: "Explain the mechanism in plain terms: what data moves, how is it organized, or what steps occur without using the label?",
-            basis: sources.length ? "source" : "knowledge",
-            slideKey: slideKeyStr,
-          });
-          break;
-        }
-      }
+      if (!match) continue;
+      const term = (match[1] || match[0]).trim();
+      const key = term.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (explains(allLines, term)) break; // named it and then explained it
+      const held = named.get(key) ?? { best: "", rejected: false };
+      if (isDismissed(line)) held.rejected = true;
+      else if (line.length > held.best.length) held.best = line;
+      named.set(key, held);
+      break;
     }
+  }
+
+  for (const [key, { best: line, rejected }] of named) {
+    if (rejected || !line) continue;
+    findings.push({
+      id: uid(),
+      severity: "jargon",
+      quote: line,
+      problem: `Names "${key}" in place of an explanation. Delete the term and nothing on this slide says what actually happens. Naming is not understanding.`,
+      fix_hint: "Say what moves and when, without the label: what is stored, what gets compared, what happens when it runs out of room?",
+      basis: sources.length ? "source" : "knowledge",
+      slideKey: slideKeyStr,
+    });
   }
 
   return findings;
@@ -521,15 +590,41 @@ export async function testCriticConnection(
 }
 
 /** One session per deck. Started lazily, because starting one costs a subprocess. */
-export function startCritic(deckTitle: string, initialConfig?: CriticConfig): CriticSession {
+export function startCritic(
+  deckTitle: string,
+  initialConfig?: CriticConfig,
+  /**
+   * Findings already disputed on disk.
+   *
+   * Without these a restart resurrects every one of them: the set of rejected
+   * quotes lived only in the session, so the critic woke up having forgotten
+   * being corrected and raised the whole lot again. Writing down why a
+   * correction is wrong is the practice this tool exists for, and it has to
+   * be worth doing once.
+   */
+  alreadyDisputed: Finding[] = [],
+): CriticSession {
   const pending = { deliver: null as ((text: string) => void) | null };
   let closed = false;
   const inflight: { resolve: ((findings: Finding[]) => void) | null } = { resolve: null };
   let collected: Finding[] = [];
   let currentKey = "";
-  let seq = 0;
   const rejections: string[] = [];
   const dismissedQuotes = new Set<string>();
+
+  // The quotes are remembered in full; only the most recent explanations are
+  // replayed to the model, because a year of them is not worth the context.
+  for (const f of alreadyDisputed) {
+    dismissedQuotes.add(f.quote.toLowerCase().trim());
+  }
+  for (const f of alreadyDisputed.slice(-20)) {
+    if (f.dismissed?.reason) {
+      rejections.push(
+        `You said: [${f.severity}] "${f.quote}" - ${f.problem}\n` +
+          `They rejected it: ${f.dismissed.reason}`,
+      );
+    }
+  }
   let chain: Promise<void> = Promise.resolve();
   let sentBin = "\u0000";
 
@@ -537,11 +632,54 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
   let resolvedModeName = "Resolving...";
   let resolvedProviderType: "gemini" | "openai" | "local" | "claude" | "heuristic" = "heuristic";
 
-  // Initial resolve
-  resolveProvider(config).then((res) => {
-    resolvedProviderType = res.provider;
-    resolvedModeName = res.name;
-  });
+  /**
+   * A provider that has already failed stays failed until the config changes.
+   *
+   * Without this the fallback never held: every review re-resolved from the
+   * configuration, which said Claude, so a session with no working Claude paid
+   * the full timeout again on every keystroke pause - and the pane, which is
+   * told what ran, went on claiming the model was reading the slide.
+   */
+  const down = new Set<CriticProvider>();
+
+  let resolvedAt = 0;
+  const RESOLVE_TTL_MS = 30_000;
+
+  /**
+   * Which provider runs, resolved at most twice a minute.
+   *
+   * Resolution can cost a network probe - in the zero-config case it pings for
+   * a local Ollama - and paying that on the pause timer of every text box is
+   * latency in the one place this tool cannot afford it.
+   */
+  async function resolved(): Promise<void> {
+    if (Date.now() - resolvedAt < RESOLVE_TTL_MS) return;
+    const res = await resolveProvider(config);
+    resolvedAt = Date.now();
+    resolvedProviderType = down.has(res.provider) ? "heuristic" : res.provider;
+    resolvedModeName = down.has(res.provider)
+      ? `Local Heuristic (${res.name} unavailable)`
+      : res.name;
+  }
+
+  /** Record that a provider is not answering, and drop to the heuristic for good. */
+  function degrade(provider: CriticProvider, why: unknown): void {
+    if (!down.has(provider)) {
+      console.warn(`[critic] ${provider} unavailable, staying on the local heuristic:`, why);
+    }
+    down.add(provider);
+    resolvedProviderType = "heuristic";
+    resolvedModeName = `Local Heuristic (${provider} unavailable)`;
+  }
+
+  /** Anything that changes the configuration gives every provider another chance. */
+  function reconfigured(): void {
+    down.clear();
+    resolvedAt = 0;
+    void resolved();
+  }
+
+  void resolved();
 
   // Claude Agent SDK session setup (for claude mode)
   async function* turns(): AsyncGenerator<any> {
@@ -579,7 +717,7 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
         async (args) => {
           collected = (args.findings ?? []).map((f) => ({
             ...f,
-            id: `f${++seq}`,
+            id: uid(),
             slideKey: currentKey,
           }));
           return { content: [{ type: "text" as const, text: "Recorded. Wait for the next slide." }] };
@@ -611,21 +749,14 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
             if (msg.type === "result") {
               const done = inflight.resolve;
               inflight.resolve = null;
-              if (msg.is_error) {
-                console.warn("[critic] Claude returned error, falling back to heuristic:", msg.result);
-                resolvedProviderType = "heuristic";
-                resolvedModeName = "Local Heuristic (Offline)";
-              }
+              if (msg.is_error) degrade("claude", msg.result);
               done?.(collected);
               collected = [];
             }
           }
         } catch (err) {
-          if (!closed) {
-            console.warn("[critic] Claude session unavailable, falling back to heuristic:", (err as Error)?.message || err);
-          }
-          resolvedProviderType = "heuristic";
-          resolvedModeName = "Local Heuristic (Offline)";
+          if (!closed) degrade("claude", (err as Error)?.message || err);
+          claudeSession = null;
           if (inflight.resolve) {
             const done = inflight.resolve;
             inflight.resolve = null;
@@ -633,9 +764,8 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
           }
         }
       })();
-    } catch {
-      resolvedProviderType = "heuristic";
-      resolvedModeName = "Local Heuristic (Offline)";
+    } catch (err) {
+      degrade("claude", err);
     }
   }
 
@@ -643,16 +773,11 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
     if (closed) return [];
     currentKey = slideKey(slide);
 
-    // Refresh provider resolution
-    const res = await resolveProvider(config);
-    resolvedProviderType = res.provider;
-    resolvedModeName = res.name;
+    await resolved();
 
     // 1. Local Heuristic
     if (resolvedProviderType === "heuristic") {
-      const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
-      seq += findings.length;
-      return findings;
+      return heuristicReview(slide, sources, firm, dismissedQuotes, currentKey);
     }
 
     const bar = firm
@@ -676,10 +801,10 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
         try {
           const model = config.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash";
           const items = await geminiReview(userPrompt, apiKey, model, 7000);
-          const findings = items.map((it) => ({ ...it, id: `f${++seq}`, slideKey: currentKey }));
+          const findings = items.map((it) => ({ ...it, id: uid(), slideKey: currentKey }));
           return filterDismissed(findings, dismissedQuotes);
         } catch (err) {
-          console.warn("[critic] Gemini call failed, falling back to heuristic:", (err as Error)?.message || err);
+          degrade("gemini", (err as Error)?.message || err);
         }
       }
     }
@@ -691,10 +816,10 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
         try {
           const model = config.openaiModel || process.env.OPENAI_MODEL || "gpt-4o-mini";
           const items = await openAICompatibleReview(userPrompt, "https://api.openai.com/v1", apiKey, model, 7000);
-          const findings = items.map((it) => ({ ...it, id: `f${++seq}`, slideKey: currentKey }));
+          const findings = items.map((it) => ({ ...it, id: uid(), slideKey: currentKey }));
           return filterDismissed(findings, dismissedQuotes);
         } catch (err) {
-          console.warn("[critic] OpenAI call failed, falling back to heuristic:", (err as Error)?.message || err);
+          degrade("openai", (err as Error)?.message || err);
         }
       }
     }
@@ -705,10 +830,10 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
       const model = config.localModel || process.env.LOCAL_MODEL || process.env.CRITIC_MODEL || "llama3:latest";
       try {
         const items = await openAICompatibleReview(userPrompt, endpoint, config.localToken, model, 8000);
-        const findings = items.map((it) => ({ ...it, id: `f${++seq}`, slideKey: currentKey }));
+        const findings = items.map((it) => ({ ...it, id: uid(), slideKey: currentKey }));
         return filterDismissed(findings, dismissedQuotes);
       } catch (err) {
-        console.warn("[critic] Local model call failed, falling back to heuristic:", (err as Error)?.message || err);
+        degrade("local", (err as Error)?.message || err);
       }
     }
 
@@ -719,14 +844,10 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
         return new Promise<Finding[]>((resolve) => {
           const timer = setTimeout(() => {
             if (inflight.resolve) {
-              console.warn("[critic] Claude timed out, activating local heuristic fallback");
-              resolvedProviderType = "heuristic";
-              resolvedModeName = "Local Heuristic (Offline)";
+              degrade("claude", "timed out");
               const done = inflight.resolve;
               inflight.resolve = null;
-              const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
-              seq += findings.length;
-              done(findings);
+              done(heuristicReview(slide, sources, firm, dismissedQuotes, currentKey));
             }
           }, 4500);
 
@@ -741,18 +862,14 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
             );
           } catch {
             clearTimeout(timer);
-            const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
-            seq += findings.length;
-            resolve(findings);
+            resolve(heuristicReview(slide, sources, firm, dismissedQuotes, currentKey));
           }
         });
       }
     }
 
     // Fallback: heuristic review
-    const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
-    seq += findings.length;
-    return findings;
+    return heuristicReview(slide, sources, firm, dismissedQuotes, currentKey);
   }
 
   return {
@@ -781,34 +898,43 @@ export function startCritic(deckTitle: string, initialConfig?: CriticConfig): Cr
       return resolvedModeName;
     },
     provider() {
-      return config.provider;
+      return resolvedProviderType;
     },
     setMode(mode: CriticProvider) {
       config.provider = mode;
-      resolveProvider(config).then((res) => {
-        resolvedProviderType = res.provider;
-        resolvedModeName = res.name;
-      });
+      reconfigured();
     },
     setConfig(newConfig: CriticConfig) {
       config = { ...newConfig };
-      resolveProvider(config).then((res) => {
-        resolvedProviderType = res.provider;
-        resolvedModeName = res.name;
-      });
+      reconfigured();
     },
   };
 }
 
 function filterDismissed(findings: Finding[], dismissed: Set<string>): Finding[] {
   if (!dismissed.size) return findings;
-  return findings.filter((f) => {
-    const q = f.quote.toLowerCase().trim();
-    for (const d of dismissed) {
-      if (d === q || q.includes(d) || d.includes(q)) return false;
-    }
-    return true;
-  });
+  return findings.filter((f) => !sameClaim(f.quote, dismissed));
+}
+
+/**
+ * Is this quote one they already rejected?
+ *
+ * Substring matching in both directions was too generous in one of them: a
+ * short dismissed quote - a heading, say - silenced every line that contained
+ * it, so disputing one finding quietly turned off the critic for the slide.
+ * Containment counts only when the dismissed quote is long enough that
+ * containing it really is repeating the same claim.
+ */
+function sameClaim(quote: string, dismissed: Set<string>): boolean {
+  const q = quote.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!q) return false;
+  for (const raw of dismissed) {
+    const d = raw.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!d) continue;
+    if (d === q) return true;
+    if (d.length >= 25 && q.includes(d)) return true;
+  }
+  return false;
 }
 
 function render(slide: Slide): string {
