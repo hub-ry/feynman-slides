@@ -127,6 +127,11 @@ export function paintCanvas() {
 
   for (const el of els()) {
     const n = node(el, t);
+    if (S.editing === el.id) {
+      // While editing, the textarea is the sole visual surface for this element.
+      // Hide the underlying node so its placeholder/text never doubles up.
+      n.style.visibility = "hidden";
+    }
     if (S.sel.has(el.id)) {
       n.classList.add("sel");
       n.style.setProperty("--ring", `${1.5 / S.scale}px`);
@@ -401,6 +406,13 @@ canvas.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
     const pt = at(e);
     disarmTool();
+    const hit = e.target.closest(".el");
+    const hitEl = hit ? elById(hit.dataset.id) : null;
+    if (hitEl && hitEl.type === "text" && !hitEl.text?.trim()) {
+      select(hitEl.id);
+      ops.startEdit(hitEl.id);
+      return;
+    }
     ops.addText("body", pt);
     return;
   }
@@ -595,14 +607,15 @@ canvas.addEventListener("dblclick", (e) => {
   if (el?.type === "image" && !el.src) emit("pick-image", el.id);
 });
 
-// Click a selected text box a second time and you are typing in it - the way
-// Slides does it, and faster than reaching for a double-click. A click that
-// ENDED a drag is not a second click, which is what `dragged` is for.
+// Click a selected text box a second time (or an empty placeholder on the first click)
+// and you are typing in it. A click that ENDED a drag is not a click, which is what `dragged` is for.
 canvas.addEventListener("click", (e) => {
   const n = e.target.closest(".el.text");
   if (!n || S.editing || dragged) return;
   const el = elById(n.dataset.id);
-  if (el && S.sel.has(el.id) && wasSelected === el.id) ops.startEdit(el.id);
+  if (el && (!el.text?.trim() || (S.sel.has(el.id) && wasSelected === el.id))) {
+    ops.startEdit(el.id);
+  }
 });
 
 // --- images ---------------------------------------------------------------

@@ -146,7 +146,7 @@ export function paintRail() {
   rankBtn.type = "button";
   rankBtn.className = "rail-icon-btn" + (rankMode ? " active" : "");
   rankBtn.title = rankMode ? "Sorted: Weakest clarity first (click to reset order)" : "Sort slides by clarity (weakest first)";
-  rankBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M9 18h6"/></svg>`;
+  rankBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18M6 12h12M9 18h6"/></svg>`;
   rankBtn.onclick = () => {
     rankMode = !rankMode;
     paintRail();
@@ -156,7 +156,7 @@ export function paintRail() {
   toggleBtn.type = "button";
   toggleBtn.className = "rail-icon-btn" + (showScores ? " active" : "");
   toggleBtn.title = showScores ? "Hide clarity badges on slides" : "Show clarity badges on slides";
-  toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
   toggleBtn.onclick = () => {
     showScores = !showScores;
     localStorage.setItem("show_clarity_scores", showScores ? "true" : "false");

@@ -141,7 +141,7 @@ export const PHOSPHOR_ICONS = {
 export function iconSvg(name, size = 16, cls = "") {
   const inner = PHOSPHOR_ICONS[name] || PHOSPHOR_ICONS.sparkle;
   const classes = `ph ph-${name} ${cls}`.trim();
-  const sw = size <= 12 ? 26 : size <= 16 ? 24 : 20;
+  const sw = size <= 12 ? 28 : size <= 16 ? 26 : 24;
   return `<svg class="${classes}" viewBox="0 0 256 256" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
 }
 
@@ -160,7 +160,7 @@ export function icon(name, size = 16, cls = "") {
   svg.setAttribute("height", String(size));
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
-  const sw = size <= 12 ? "26" : size <= 16 ? "24" : "20";
+  const sw = size <= 12 ? "28" : size <= 16 ? "26" : "24";
   svg.setAttribute("stroke-width", sw);
   svg.setAttribute("stroke-linecap", "round");
   svg.setAttribute("stroke-linejoin", "round");

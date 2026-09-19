@@ -137,6 +137,24 @@ export function startEdit(id) {
 }
 
 export function addText(role = "body", at) {
+  const cur = only();
+  if (cur && cur.type === "text" && !cur.text?.trim() && !at) {
+    startEdit(cur.id);
+    return cur;
+  }
+
+  if (at) {
+    const hitEl = els().find(
+      (e) => e.type === "text" && !e.text?.trim() &&
+      at.x >= e.x && at.x <= e.x + e.w &&
+      at.y >= e.y && at.y <= e.y + e.h
+    );
+    if (hitEl) {
+      startEdit(hitEl.id);
+      return hitEl;
+    }
+  }
+
   const n = els().filter((e) => e.type === "text").length;
   const w = role === "title" ? 560 : 420;
   const h = role === "title" ? 80 : 96;

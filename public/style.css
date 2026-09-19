@@ -83,14 +83,14 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible,
 a:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
 button svg { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor;
-  stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 
 /* 256x256 Phosphor icons: maintain proper stroke proportions rather than 24-box stroke */
 svg.ph,
 svg[viewBox="0 0 256 256"],
 button svg.ph,
 button svg[viewBox="0 0 256 256"] {
-  stroke-width: 22px;
+  stroke-width: 24px;
 }
 svg.ph[width="16"], svg[viewBox="0 0 256 256"][width="16"],
 button svg.ph[width="16"], button svg[viewBox="0 0 256 256"][width="16"],
@@ -100,13 +100,13 @@ svg.ph[width="14"], svg[viewBox="0 0 256 256"][width="14"],
 button svg.ph[width="14"], button svg[viewBox="0 0 256 256"][width="14"],
 svg.ph[width="13"], svg[viewBox="0 0 256 256"][width="13"],
 button svg.ph[width="13"], button svg[viewBox="0 0 256 256"][width="13"] {
-  stroke-width: 24px;
+  stroke-width: 26px;
 }
 svg.ph[width="12"], svg[viewBox="0 0 256 256"][width="12"],
 button svg.ph[width="12"], button svg[viewBox="0 0 256 256"][width="12"],
 svg.ph[width="11"], svg[viewBox="0 0 256 256"][width="11"],
 button svg.ph[width="11"], button svg[viewBox="0 0 256 256"][width="11"] {
-  stroke-width: 26px;
+  stroke-width: 28px;
 }
 
 /* 3-dot overflow menus are solid dots, not hollow rings */
@@ -117,8 +117,8 @@ button svg.ph[width="11"], button svg[viewBox="0 0 256 256"][width="11"] {
 }
 
 button.icon { width: 32px; height: 32px; padding: 0; justify-content: center; border-radius: 50%;
-  position: relative; }
-button.ghost { color: var(--dim); }
+  position: relative; color: var(--ink); }
+button.ghost { color: var(--ink); }
 button.ghost:hover { color: var(--ink); }
 button.ghost.on, button.ghost.on:hover { background: var(--active); color: var(--sel); }
 button.ghost.strong { color: var(--ink); border-color: var(--rule); border-radius: 100px; padding: .34rem .9rem; }
@@ -172,9 +172,9 @@ button.logo:hover { background: var(--sel); filter: brightness(1.1); }
   position: relative; display: flex; align-items: center;
 }
 .home-search-wrap .search-icon {
-  position: absolute; left: .65rem; width: 14px; height: 14px;
-  color: var(--dim); pointer-events: none; fill: none; stroke: currentColor;
-  stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+  position: absolute; left: .65rem; width: 15px; height: 15px;
+  color: var(--ink); pointer-events: none; fill: none; stroke: currentColor;
+  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
 }
 .home-search {
   height: 32px; padding: 0 .7rem 0 2rem; border-radius: 100px;
@@ -238,7 +238,7 @@ button.logo:hover { background: var(--sel); filter: brightness(1.1); }
   display: flex; align-items: center; gap: .5rem; font-size: 16px; font-weight: 600;
   letter-spacing: -.01em; color: var(--ink);
 }
-.folder-section-title svg { width: 16px; height: 16px; color: var(--dim); }
+.folder-section-title svg { width: 16px; height: 16px; color: var(--ink); }
 .folder-section-count { font-size: 12px; color: var(--faint); font-weight: 400; }
 
 .card-folder {
@@ -282,7 +282,7 @@ button.logo:hover { background: var(--sel); filter: brightness(1.1); }
   position: absolute; top: .5rem; right: .5rem; width: 26px; height: 26px;
   border-radius: 50%; opacity: 0; transition: opacity .12s ease;
   background: var(--panel); border: 1px solid var(--rule);
-  display: flex; align-items: center; justify-content: center; color: var(--dim);
+  display: flex; align-items: center; justify-content: center; color: var(--ink);
   z-index: 2; padding: 0;
 }
 .card:hover .card-menu-btn, .card-menu-btn.open { opacity: 1; }
@@ -428,15 +428,19 @@ body.no-critic .critique { display: none; }
 .el.image img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
 .el code { font-family: var(--mono); font-size: .88em; padding: .05em .3em; border-radius: 3px;
   background: color-mix(in srgb, var(--muted, #888) 20%, transparent); }
-.el.blank .ph {
-  display: flex; align-items: center; gap: .4em; height: 100%;
+.el.text.blank .ph {
+  display: block; line-height: inherit;
   color: color-mix(in srgb, var(--muted, #888) 85%, transparent);
-  font: inherit; opacity: .7; pointer-events: none;
+  font: inherit; opacity: .5; pointer-events: none;
 }
 .el.image.blank {
   border: 2px dashed color-mix(in srgb, var(--muted, #888) 45%, transparent); border-radius: 6px;
 }
-.el.image.blank .ph { justify-content: center; font: 500 15px/1 var(--ui); }
+.el.image.blank .ph {
+  display: flex; align-items: center; justify-content: center; gap: .4em; height: 100%;
+  color: color-mix(in srgb, var(--muted, #888) 85%, transparent);
+  font: 500 15px/1 var(--ui); opacity: .7; pointer-events: none;
+}
 .el.image.blank .ph svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.5; }
 .el.sel { outline: var(--ring, 1.5px) solid var(--sel); outline-offset: 1px; }
 .el.flagged { box-shadow: inset 0 -2px 0 0 var(--error); }
@@ -457,7 +461,10 @@ textarea.editor {
   background: transparent; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere;
   z-index: 22; box-shadow: 0 0 0 1.5px var(--sel);
 }
-textarea.editor::placeholder { color: currentColor; opacity: .35; }
+textarea.editor::placeholder {
+  color: color-mix(in srgb, var(--muted, #888) 85%, transparent);
+  opacity: .5;
+}
 
 /* --- the format bar ------------------------------------------------------ */
 #formatbar {
@@ -512,7 +519,7 @@ textarea.editor::placeholder { color: currentColor; opacity: .35; }
 }
 .bin-toggle svg {
   width: 17px; height: 17px; fill: none; stroke: currentColor;
-  stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round;
+  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
 }
 button.bin-toggle.on, button.bin-toggle.on:hover { background: var(--active); color: var(--sel); }
 .bin-toggle .count { color: var(--faint); font-weight: 400; }
@@ -530,8 +537,8 @@ button.bin-toggle.on, button.bin-toggle.on:hover { background: var(--active); co
 #bin .hint { font-size: 11.5px; color: var(--faint); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 #bin .empty { white-space: normal; padding: .2rem .1rem 0; margin: 0; }
-#binClose { width: 26px; height: 26px; }
-#binClose svg { width: 15px; height: 15px; stroke: var(--dim); stroke-width: 2.2; }
+#binClose { width: 26px; height: 26px; color: var(--ink); }
+#binClose svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 2.4; }
 
 /* The two ways in sit side by side, because they are the same move: a PDF you
    were handed, or a passage you copied. */
@@ -553,7 +560,7 @@ button.upload {
   border: 1px solid var(--rule); border-radius: 100px; padding: .3rem .8rem;
 }
 button.upload:hover { background: var(--active); border-color: var(--sel); }
-button.upload svg { width: 15px; height: 15px; stroke-width: 2.1; }
+button.upload svg { width: 15px; height: 15px; stroke-width: 2.4; }
 
 /* Full width now, so forty lecture pages read as a wall of cards rather than
    one very long column. */
@@ -687,13 +694,14 @@ button.upload svg { width: 15px; height: 15px; stroke-width: 2.1; }
   border-radius: 6px;
   border: 1px solid var(--rule);
   background: var(--bg);
-  color: var(--dim);
+  color: var(--ink);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all .1s ease;
 }
+.critic-recheck-btn svg { width: 14px; height: 14px; stroke-width: 26px; }
 .critic-recheck-btn:hover {
   border-color: var(--dim);
   color: var(--ink);
@@ -1487,7 +1495,7 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   width: 18px; height: 18px; padding: 0;
   display: flex; align-items: center; justify-content: center;
   border-radius: 4px; font-size: 13px; line-height: 1; opacity: 0;
-  background: var(--panel); color: var(--dim); border: 1px solid var(--rule);
+  background: var(--panel); color: var(--ink); border: 1px solid var(--rule);
   cursor: pointer; transition: opacity .1s ease, color .1s ease;
 }
 .thumb:hover .thumb-actions .more, .thumb:hover .thumb-actions .kill {
@@ -1578,7 +1586,7 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   justify-content: center;
   border: 0;
   background: transparent;
-  color: var(--dim);
+  color: var(--ink);
   cursor: pointer;
   margin-left: .25rem;
 }
@@ -1625,11 +1633,11 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 .rail-icon-btn {
   width: 24px; height: 24px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 5px; font-size: 10.5px; font-weight: 550; color: var(--dim);
+  border-radius: 5px; font-size: 10.5px; font-weight: 550; color: var(--ink);
   background: var(--bg); border: 1px solid var(--rule); cursor: pointer;
   transition: all .1s ease;
 }
-.rail-icon-btn svg { width: 14px; height: 14px; stroke-width: 2.2; }
+.rail-icon-btn svg { width: 14px; height: 14px; stroke-width: 2.4; }
 .rail-icon-btn:hover { color: var(--ink); background: var(--hover); border-color: var(--dim); }
 .rail-icon-btn.active {
   background: var(--active); color: var(--sel); border-color: var(--sel); font-weight: 600;
@@ -1700,7 +1708,7 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 .score-pop-close {
   position: absolute; top: -4px; right: -4px;
   width: 22px; height: 22px; border-radius: 50%;
-  border: 0; background: transparent; color: var(--dim);
+  border: 0; background: transparent; color: var(--ink);
   font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .score-pop-close:hover { background: var(--hover); color: var(--ink); }
