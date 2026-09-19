@@ -6,6 +6,11 @@ You write slides to teach yourself a topic. A critic reads each slide as you wri
 
 The bet is that the moment worth catching is while you are writing the slide, not after. A slide that looks finished and is subtly wrong is the worst thing this could produce, because you end up studying from it.
 
+### Why this method?
+While preparing for his doctoral exams at Princeton, Richard Feynman bought a blank notebook and titled it *Notebook of Things I Don't Know About*. He spent weeks tearing physics down to its bare mechanisms, rebuilding each concept without jargon.
+
+Cognitive science calls this the [self-explanation effect](https://doi.org/10.1207/s15516709cog1302_1) and the [protégé effect](https://doi.org/10.1007/s10956-009-9180-4): you learn fastest when you force yourself to explain an idea simply. Most presentation software lets you hide behind copy-pasted bullets and impressive labels. Feynman Slides does the opposite. It treats your deck as that notebook, and stops you the second you name a thing instead of explaining how it works.
+
 ### The Loop
 1. Drop lecture slides or raw notes into the source bin.
 2. Build your deck slide by slide. Press `T` to drop text anywhere and use nested bullets to break down concepts.
