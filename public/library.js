@@ -205,7 +205,13 @@ const PANES = {
     searchInput.placeholder = "🔍 Search crowdsourced stylesheets by name, description, author...";
     topBar.append(searchInput);
 
-    const publishBtn = button("+ Publish a stylesheet", "ghost small strong", () => {
+    const designerBtn = button("+ Design New Template", "primary small strong", () => {
+      close();
+      openEditor(S.deck?.template ?? "feynman", { fork: true });
+    });
+    topBar.append(designerBtn);
+
+    const publishBtn = button("Publish a stylesheet", "ghost small strong", () => {
       openPublishDialog(() => show("community"));
     });
     topBar.append(publishBtn);
@@ -337,6 +343,18 @@ const PANES = {
     const wrap = document.createElement("div");
     wrap.className = "make";
 
+    const hero = document.createElement("section");
+    hero.className = "make-hero";
+    hero.append(Object.assign(document.createElement("h3"), { textContent: "Visual Template Creator" }));
+    hero.append(Object.assign(document.createElement("p"), {
+      textContent: "Interactively design color palettes, typography pairings, and layout styling with real-time preview and 1-click install or community sharing.",
+    }));
+    hero.append(button("Launch Visual Template Creator", "primary", () => {
+      close();
+      openEditor(S.deck?.template ?? "feynman", { fork: true });
+    }));
+    wrap.append(hero);
+
     const one = document.createElement("section");
     one.append(Object.assign(document.createElement("h3"), { textContent: "From this deck" }));
     one.append(Object.assign(document.createElement("p"), {
@@ -392,11 +410,6 @@ function alertLine(wrap, msg) {
 }
 
 // --- the template editor --------------------------------------------------
-//
-// Four colours and a type scale. Not a design tool - the things in here are
-// the things the renderer actually reads, and anything more expressive is a
-// reason to open the JSON, which is why the path to it is printed at the
-// bottom of this form.
 
 const STACKS = {
   Sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
@@ -404,33 +417,123 @@ const STACKS = {
   Mono: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
 };
 
+const PALETTE_PRESETS = [
+  { name: "Clean Light", paper: "#ffffff", ink: "#111827", muted: "#6b7280", accent: "#2563eb" },
+  { name: "Anki Dark", paper: "#0f172a", ink: "#f8fafc", muted: "#94a3b8", accent: "#38bdf8" },
+  { name: "Cornell Cream", paper: "#fbf7ee", ink: "#292524", muted: "#78716c", accent: "#ea580c" },
+  { name: "Chalkboard", paper: "#1a2421", ink: "#f4f6f5", muted: "#8ca299", accent: "#facc15" },
+  { name: "Modern Pitch", paper: "#1e1b4b", ink: "#ffffff", muted: "#c084fc", accent: "#f43f5e" },
+  { name: "Swiss Bauhaus", paper: "#f4f4f5", ink: "#18181b", muted: "#71717a", accent: "#dc2626" },
+  { name: "Nordic Minimal", paper: "#2e3440", ink: "#eceff4", muted: "#d8dee9", accent: "#88c0d0" },
+];
+
+const FONT_PAIRINGS = [
+  { name: "Modern Sans", title: "Sans", body: "Sans" },
+  { name: "Editorial Classic", title: "Serif", body: "Serif" },
+  { name: "Technical / Code", title: "Sans", body: "Mono" },
+  { name: "Academic Punch", title: "Serif", body: "Sans" },
+];
+
+const SAMPLE_SLIDES = [
+  {
+    name: "Bullet Concept",
+    getEls: (t) => {
+      const l = t.layouts.find((x) => x.id === "title-body") ?? t.layouts[0];
+      return l.els.map((e) =>
+        e.type !== "text"
+          ? e
+          : {
+              ...e,
+              text:
+                e.role === "title"
+                  ? "How Raft Achieves Consensus"
+                  : "- Leader election via randomized heartbeats\n  - Followers transition on timeout\n  - Majority vote required to win\n- Log replication guarantees linearizability",
+            },
+      );
+    },
+  },
+  {
+    name: "Title Slide",
+    getEls: (t) => {
+      const l = t.layouts.find((x) => x.id === "title") ?? t.layouts[0];
+      return l.els.map((e) =>
+        e.type !== "text"
+          ? e
+          : {
+              ...e,
+              text: e.role === "title" ? "Distributed Systems" : "A Feynman Study Guide",
+            },
+      );
+    },
+  },
+  {
+    name: "Stat Callout",
+    getEls: (t) => {
+      const l = t.layouts.find((x) => x.id === "stat" || x.id === "statement") ?? t.layouts[0];
+      return l.els.map((e) =>
+        e.type !== "text"
+          ? e
+          : {
+              ...e,
+              text: e.role === "title" ? "O(log n)" : "B-tree search depth with 1M items",
+            },
+      );
+    },
+  },
+];
+
 export async function openEditor(id, { fork = false } = {}) {
   const raw = await fetch(`/api/templates/raw/${id}`).then((r) => (r.ok ? r.json() : null));
   if (!raw) return;
   const draft = structuredClone(raw);
   if (fork) {
-    draft.id = `${raw.id}-mine`;
-    draft.name = `${raw.name} (mine)`;
+    draft.id = `${raw.id}-custom`;
+    draft.name = `${raw.name} (Custom)`;
     draft.author = "you";
   }
   delete draft.builtin;
 
-  const { body, close } = modal(fork ? "New template" : `Edit ${raw.name}`,
-    "Colours and type. Layouts come from the deck you made it out of.");
+  const { body, close } = modal(
+    fork ? "Visual Template Creator" : `Edit Stylesheet: ${raw.name}`,
+    "Design colors, typography pairings, and layout styling with live interactive preview.",
+  );
   body.parentElement.classList.add("wide");
+
+  let activeSlideIdx = 0;
 
   const form = document.createElement("div");
   form.className = "editor-grid";
   const fields = document.createElement("div");
   fields.className = "fields";
+  const previewWrap = document.createElement("div");
+  previewWrap.className = "epreview-wrap";
+  form.append(fields, previewWrap);
+  body.append(form);
+
   const preview = document.createElement("div");
   preview.className = "epreview";
-  form.append(fields, preview);
-  body.append(form);
+
+  const previewSwitcher = document.createElement("div");
+  previewSwitcher.className = "epreview-tabs";
+  SAMPLE_SLIDES.forEach((sample, idx) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "epreview-tab" + (idx === activeSlideIdx ? " on" : "");
+    btn.textContent = sample.name;
+    btn.onclick = () => {
+      activeSlideIdx = idx;
+      for (const b of previewSwitcher.children) b.classList.remove("on");
+      btn.classList.add("on");
+      redraw();
+    };
+    previewSwitcher.append(btn);
+  });
+  previewWrap.append(previewSwitcher, preview);
 
   const redraw = () => {
     const t = normalize(draft);
-    preview.replaceChildren(miniature(SAMPLE(t), t, { width: 380 }));
+    const els = SAMPLE_SLIDES[activeSlideIdx].getEls(t);
+    preview.replaceChildren(miniature(els, t, { width: 380, hints: true }));
   };
 
   const field = (label, node) => {
@@ -440,27 +543,124 @@ export async function openEditor(id, { fork = false } = {}) {
     return row;
   };
 
-  const nameIn = Object.assign(document.createElement("input"), { value: draft.name });
-  nameIn.oninput = () => { draft.name = nameIn.value; };
-  const idIn = Object.assign(document.createElement("input"), { value: draft.id });
-  idIn.oninput = () => { draft.id = slugOf(idIn.value); idIn.value = draft.id; };
-  fields.append(field("Name", nameIn), field("Folder name", idIn));
+  // --- 1-Click Color Presets ---
+  const presetSection = document.createElement("div");
+  presetSection.className = "field-section";
+  presetSection.innerHTML = `<span class="section-label">1-Click Color Themes</span>`;
+  const presetRow = document.createElement("div");
+  presetRow.className = "preset-chips";
+  PALETTE_PRESETS.forEach((p) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "preset-chip";
+    chip.innerHTML = `
+      <span class="preset-dots">
+        <i style="background:${p.paper};border:1px solid rgba(128,128,128,0.3)"></i>
+        <i style="background:${p.ink}"></i>
+        <i style="background:${p.accent}"></i>
+      </span>
+      <span>${p.name}</span>
+    `;
+    chip.onclick = () => {
+      draft.palette = { paper: p.paper, ink: p.ink, muted: p.muted, accent: p.accent };
+      updateColorInputs();
+      redraw();
+    };
+    presetRow.append(chip);
+  });
+  presetSection.append(presetRow);
+  fields.append(presetSection);
 
+  // --- Identity Metadata ---
+  const metaSection = document.createElement("div");
+  metaSection.className = "field-section";
+  metaSection.innerHTML = `<span class="section-label">Template Details</span>`;
+  const nameIn = Object.assign(document.createElement("input"), { value: draft.name, placeholder: "Template Name" });
+  nameIn.oninput = () => { draft.name = nameIn.value; };
+  const idIn = Object.assign(document.createElement("input"), { value: draft.id, placeholder: "template-id" });
+  idIn.oninput = () => { draft.id = slugOf(idIn.value); idIn.value = draft.id; };
+  metaSection.append(
+    field("Name", nameIn),
+    field("Folder / ID", idIn),
+  );
+  fields.append(metaSection);
+
+  // --- Colors Grid ---
+  const colorsSection = document.createElement("div");
+  colorsSection.className = "field-section";
+  colorsSection.innerHTML = `<span class="section-label">Palette Colors</span>`;
   const colours = document.createElement("div");
-  colours.className = "colours";
+  colours.className = "colours-grid";
+
+  const colorInputs = {};
   for (const token of TOKENS) {
+    const cell = document.createElement("div");
+    cell.className = "colour-card";
     const input = Object.assign(document.createElement("input"), {
       type: "color",
       value: (draft.palette?.[token] ?? "#000000").slice(0, 7),
     });
-    input.oninput = () => { (draft.palette ??= {})[token] = input.value; redraw(); };
-    const cell = document.createElement("label");
-    cell.className = "colour";
-    cell.append(input, Object.assign(document.createElement("span"), { textContent: token }));
+    const hex = Object.assign(document.createElement("input"), {
+      type: "text",
+      value: input.value,
+      className: "hex-input",
+    });
+    input.oninput = () => {
+      (draft.palette ??= {})[token] = input.value;
+      hex.value = input.value;
+      redraw();
+    };
+    hex.oninput = () => {
+      if (/^#[0-9a-fA-F]{6}$/.test(hex.value)) {
+        input.value = hex.value;
+        (draft.palette ??= {})[token] = hex.value;
+        redraw();
+      }
+    };
+    colorInputs[token] = { input, hex };
+    cell.append(input, Object.assign(document.createElement("span"), { className: "cname", textContent: token }), hex);
     colours.append(cell);
   }
-  fields.append(field("Colours", colours));
 
+  function updateColorInputs() {
+    for (const token of TOKENS) {
+      if (colorInputs[token] && draft.palette?.[token]) {
+        colorInputs[token].input.value = draft.palette[token];
+        colorInputs[token].hex.value = draft.palette[token];
+      }
+    }
+  }
+
+  colorsSection.append(colours);
+  fields.append(colorsSection);
+
+  // --- Typography Section ---
+  const typoSection = document.createElement("div");
+  typoSection.className = "field-section";
+  typoSection.innerHTML = `<span class="section-label">Typography Pairings</span>`;
+
+  const pairingRow = document.createElement("div");
+  pairingRow.className = "preset-chips";
+  FONT_PAIRINGS.forEach((fp) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "preset-chip";
+    chip.textContent = fp.name;
+    chip.onclick = () => {
+      for (const role of Object.keys(draft.roles ?? normalize(draft).roles)) {
+        draft.roles ??= {};
+        draft.roles[role] ??= normalize(draft).roles[role];
+        const isHeading = role === "title" || role === "subtitle" || role === "kicker" || role === "stat";
+        draft.roles[role].family = STACKS[isHeading ? fp.title : fp.body] ?? draft.roles[role].family;
+      }
+      redraw();
+    };
+    pairingRow.append(chip);
+  });
+  typoSection.append(pairingRow);
+  fields.append(typoSection);
+
+  // Advanced roles
   for (const role of Object.keys(draft.roles ?? normalize(draft).roles)) {
     draft.roles ??= {};
     draft.roles[role] ??= normalize(draft).roles[role];
@@ -497,17 +697,48 @@ export async function openEditor(id, { fork = false } = {}) {
     fields.append(field(role, line));
   }
 
+  // --- Footer Actions ---
   const foot = document.createElement("div");
   foot.className = "efoot";
-  const save = button("Save template", "primary", async () => {
+
+  const save = button("Save & Apply to Deck", "primary", async () => {
     const { ok, data } = await post("/api/templates/save", draft);
     if (!ok) return alertLine(body, data.error);
     await loadTemplates();
     close();
     ops.setTemplate(data.template.id);
-    emit("say", `saved ${data.template.name}`);
+    emit("say", `applied ${data.template.name}`);
   });
-  foot.append(save, Object.assign(document.createElement("span"), {
+
+  const publish = button("Publish to Community", "ghost", async () => {
+    const { ok: saveOk, data: savedData } = await post("/api/templates/save", draft);
+    if (!saveOk) return alertLine(body, savedData?.error);
+    await loadTemplates();
+    const { ok, data } = await post("/api/templates/community/publish", {
+      template: draft,
+      category: "custom",
+      tags: ["custom", "community"],
+      author: draft.author || "Community Designer",
+      description: draft.description || `${draft.name} custom stylesheet`,
+    });
+    if (ok) {
+      emit("say", `published ${draft.name} to Community Catalog`);
+      close();
+      ops.setTemplate(draft.id);
+    } else {
+      alertLine(body, data?.error || "could not publish");
+    }
+  });
+
+  const exportJson = button("Download JSON", "ghost", () => {
+    const blob = new Blob([JSON.stringify(draft, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${draft.id}.json`;
+    a.click();
+  });
+
+  foot.append(save, publish, exportJson, Object.assign(document.createElement("span"), {
     className: "folder",
     textContent: S.templatesDir ? `${S.templatesDir}/${draft.id}.json` : "",
   }));
