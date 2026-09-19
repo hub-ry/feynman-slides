@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, extname, normalize, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startCritic, type CriticSession, type Finding, resolveProvider, testCriticConnection } from "./critic.ts";
-import { type Deck, slideKey, uid } from "./deck.ts";
+import { type Deck, slideKey, slideDigest, hasText, uid } from "./deck.ts";
 import * as store from "./store.ts";
 import { exportDeck, Blocked } from "./export.ts";
 import * as templates from "./templates.ts";
@@ -23,13 +23,27 @@ const PUBLIC = join(ROOT, "public");
 // rest of this tool does.
 const VENDOR = join(ROOT, "node_modules", "pdfjs-dist", "build");
 
-type Live = { critic: CriticSession; clients: Set<ServerResponse>; reviewing: Set<string> };
+type Live = {
+  critic: CriticSession;
+  clients: Set<ServerResponse>;
+  reviewing: Set<string>;
+  /** Slides asked for again while a pass was running, and whether that ask was firm. */
+  queued: Map<string, boolean>;
+};
 const live = new Map<string, Live>();
 
 function open(slug: string, title: string): Live {
   let d = live.get(slug);
   if (!d) {
-    d = { critic: startCritic(title), clients: new Set(), reviewing: new Set() };
+    // The critic is handed what it has already been corrected about. A dispute
+    // is written down once and has to hold across restarts.
+    const disputed = store.readState(slug).dismissed;
+    d = {
+      critic: startCritic(title, undefined, disputed),
+      clients: new Set(),
+      reviewing: new Set(),
+      queued: new Map(),
+    };
     live.set(slug, d);
   }
   return d;
@@ -49,39 +63,78 @@ function push(slug: string, event: string, data: unknown): void {
  * while typing in a text box (advisory - a half-typed bullet is not a finding)
  * and finishing with that box (this is as done as it is getting).
  *
- * Deduplicated per slide because a pause and a blur land milliseconds apart -
- * you stop typing precisely because you are about to click elsewhere.
+ * A pass already running for this slide does not cancel the new ask, it defers
+ * it. A pause and a blur land milliseconds apart - you stop typing precisely
+ * because you are about to click elsewhere - and dropping the second one meant
+ * dropping the firm pass, so the authoritative read of a finished slide was
+ * routinely thrown away in favour of the advisory read of it half-typed.
  */
 async function review(slug: string, slideId: string, firm: boolean): Promise<void> {
   const deck = store.readDeck(slug);
   const slide = deck.slides.find((s) => s.id === slideId);
   if (!slide) return;
-  if (!slide.els.some((e) => e.type === "text" && e.text.trim())) return;
 
   const key = slideKey(slide);
   const d = open(slug, deck.title);
-  if (d.reviewing.has(key)) return;
+
+  // Nothing written on it. Say so and clear whatever was there, rather than
+  // returning quietly and leaving a critique of text the writer has deleted.
+  if (!hasText(slide)) {
+    const state = store.prune(deck, store.readState(slug));
+    delete state.findings[key];
+    delete state.reviewed[key];
+    store.writeState(slug, state);
+    push(slug, "findings", {
+      slideKey: key,
+      findings: [],
+      digest: slideDigest(slide),
+      blocking: store.blocking(state).length,
+      criticMode: d.critic.mode(),
+      criticProvider: d.critic.provider(),
+    });
+    return;
+  }
+
+  if (d.reviewing.has(key)) {
+    d.queued.set(key, (d.queued.get(key) ?? false) || firm);
+    return;
+  }
   d.reviewing.add(key);
   push(slug, "reviewing", { slideKey: key });
+
+  // The fingerprint of what we are about to send, not of whatever is on disk
+  // when the answer lands. If they kept typing, the critique that comes back
+  // is already about older words, and the pane has to be able to tell.
+  const digest = slideDigest(slide);
 
   try {
     const findings = await d.critic.review(slide, deck.sources ?? [], firm);
     const state = store.prune(deck, store.readState(slug));
     // An advisory pass never clears a firm pass's findings: you paused
     // mid-sentence, which is not evidence the slide got better.
-    if (firm || findings.length) state.findings[key] = findings;
+    if (firm || findings.length) {
+      state.findings[key] = findings;
+      state.reviewed[key] = { digest, at: new Date().toISOString() };
+    }
     store.writeState(slug, state);
     push(slug, "findings", {
       slideKey: key,
       findings: state.findings[key] ?? [],
+      digest: state.reviewed[key]?.digest ?? "",
       blocking: store.blocking(state).length,
       criticMode: d.critic.mode(),
+      criticProvider: d.critic.provider(),
     });
   } catch (err) {
     push(slug, "error", { message: String(err) });
   } finally {
     d.reviewing.delete(key);
     push(slug, "idle", { slideKey: key });
+    const again = d.queued.get(key);
+    if (again !== undefined) {
+      d.queued.delete(key);
+      void review(slug, slideId, again);
+    }
   }
 }
 
@@ -346,6 +399,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       state,
       blocking: store.blocking(state).length,
       criticMode: d.critic.mode(),
+      criticProvider: d.critic.provider(),
     });
   }
 
@@ -434,6 +488,39 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     state.dismissed.push(hit);
     store.writeState(slug, state);
     live.get(slug)?.critic.dismissed(hit, reason.trim());
+    return json(res, 200, { blocking: store.blocking(state).length });
+  }
+
+  /**
+   * Take back a dispute.
+   *
+   * The finding is looked for in both places it can be. Once the slide has
+   * been read again the critic no longer reports it - that is what disputing
+   * it did - so the only copy left is the one in the log, and a restore that
+   * searched the open findings alone could only ever undo a dispute you had
+   * made seconds ago.
+   */
+  if (req.method === "POST" && action === "restore") {
+    const { id } = await body(req);
+    const deck = store.readDeck(slug);
+    const state = store.prune(deck, store.readState(slug));
+
+    const open = Object.values(state.findings).flat().find((f) => f.id === id);
+    const logged = state.dismissed.find((f) => f.id === id);
+    if (!open && !logged) return json(res, 404, { error: "no such finding" });
+
+    if (open) delete open.dismissed;
+    state.dismissed = state.dismissed.filter((f) => f.id !== id);
+    // The slide has to be read again for the finding to come back, so the
+    // fingerprint of the last read is no longer the answer to anything.
+    const key = (open ?? logged)!.slideKey;
+    delete state.reviewed[key];
+    store.writeState(slug, state);
+
+    // The session remembered the quote as settled. It is open again, so the
+    // critic has to be allowed to raise it - which means starting it over.
+    live.get(slug)?.critic.close();
+    live.delete(slug);
     return json(res, 200, { blocking: store.blocking(state).length });
   }
 

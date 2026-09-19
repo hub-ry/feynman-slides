@@ -15,7 +15,7 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Finding } from "./critic.ts";
-import { type Deck, blankDeck, slideKey, migrate } from "./deck.ts";
+import { type Deck, blankDeck, slideKey, slideDigest, stillApplies, migrate } from "./deck.ts";
 
 export const HOME = process.env.FEYNMAN_SLIDES_HOME ?? join(homedir(), ".feynman-slides");
 export const DECKS = join(HOME, "decks");
@@ -53,8 +53,21 @@ export function assertStorageCapacity(additionalBytes = 0): void {
   }
 }
 
-export type State = { findings: Record<string, Finding[]>; dismissed: Finding[] };
-const EMPTY: State = { findings: {}, dismissed: [] };
+/**
+ * `reviewed` is the fingerprint of the text each slide was last read at.
+ *
+ * Findings alone cannot tell you whether a critique is current: an empty list
+ * means "clean" and "never looked" equally, and a full one goes on looking
+ * authoritative long after the sentence it quotes has been rewritten. The
+ * fingerprint is what separates the three, and it is what the review pane
+ * shows the difference between.
+ */
+export type State = {
+  findings: Record<string, Finding[]>;
+  dismissed: Finding[];
+  reviewed: Record<string, { digest: string; at: string }>;
+};
+const EMPTY: State = { findings: {}, dismissed: [], reviewed: {} };
 
 export function slugify(title: string): string {
   return (
@@ -98,7 +111,7 @@ export function list(): Card[] {
         folder: deck.folder?.trim() || undefined,
         slides: deck.slides.length,
         first: deck.slides[0]?.els ?? [],
-        blocking: blocking(readState(e.name)).length,
+        blocking: blocking(prune(deck, readState(e.name))).length,
         updated: statSync(deckPath(e.name)).mtimeMs,
       };
     })
@@ -235,7 +248,11 @@ export function readState(slug: string): State {
   if (!existsSync(p)) return structuredClone(EMPTY);
   try {
     const parsed = JSON.parse(readFileSync(p, "utf8"));
-    return { findings: parsed.findings ?? {}, dismissed: parsed.dismissed ?? [] };
+    return {
+      findings: parsed.findings ?? {},
+      dismissed: parsed.dismissed ?? [],
+      reviewed: parsed.reviewed ?? {},
+    };
   } catch {
     return structuredClone(EMPTY);
   }
@@ -247,17 +264,45 @@ export function writeState(slug: string, state: State): void {
 }
 
 /**
- * Drop findings for slides that no longer exist.
+ * Drop everything that is no longer about a slide you can see.
  *
- * Without this, deleting a slide leaves its findings holding the export
- * forever, with nothing on screen to explain what is blocking you.
+ * Two ways a finding goes stale, and both used to leave it on screen:
+ *
+ *   The slide was deleted. Without this its findings hold the export forever,
+ *   with nothing on screen to explain what is blocking you.
+ *
+ *   The sentence was rewritten. A finding quotes the exact bullet it means,
+ *   so once that bullet is gone the finding is about text that does not
+ *   exist. Leaving it up is worse than saying nothing: it is a specific,
+ *   confident claim about words the writer already took back, and it blocks
+ *   an export they cannot fix, because there is nothing left to fix.
+ *
+ * Rewriting the line is what re-opens the question. The re-review answers it.
  */
 export function prune(deck: Deck, state: State): State {
-  const live = new Set(deck.slides.map(slideKey));
+  const bySlide = new Map(deck.slides.map((s) => [slideKey(s), s]));
+
   for (const key of Object.keys(state.findings)) {
-    if (!live.has(key)) delete state.findings[key];
+    const slide = bySlide.get(key);
+    if (!slide) {
+      delete state.findings[key];
+      continue;
+    }
+    state.findings[key] = state.findings[key]!.filter((f) => stillApplies(f, slide));
   }
+
+  for (const key of Object.keys(state.reviewed)) {
+    if (!bySlide.has(key)) delete state.reviewed[key];
+  }
+
+  state.dismissed = state.dismissed.filter((f) => bySlide.has(f.slideKey));
+
   return state;
+}
+
+/** True when the critique on file was written against the words now on the slide. */
+export function isCurrent(state: State, slide: Parameters<typeof slideKey>[0]): boolean {
+  return state.reviewed[slideKey(slide)]?.digest === slideDigest(slide);
 }
 
 /**
