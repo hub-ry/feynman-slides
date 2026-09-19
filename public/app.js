@@ -933,6 +933,9 @@ async function router() {
 
   if (m && list.some((d) => d.slug === m[1])) {
     document.body.dataset.view = "editor";
+    if (window.innerWidth <= 860 && !document.body.classList.contains("no-critic")) {
+      toggleCritic(true);
+    }
     await load(m[1]);
     scaleRail();
     return;
