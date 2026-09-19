@@ -26,22 +26,14 @@ function at(e) {
 export function fit() {
   const wrap = stage.parentElement;
   const cs = getComputedStyle(wrap);
-  const binEl = document.querySelector(".bin");
   const availW = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
 
-  // Twice, because the two measurements depend on each other: the bin is as
-  // wide as the drawn slide, and how tall it wraps to decides how big the
-  // slide can be. One extra pass settles it; more would not move.
-  for (let pass = 0; pass < 2; pass++) {
-    const availH = wrap.clientHeight - padY - binEl.offsetHeight - 14;
-    S.scale = Math.max(0.2, Math.min(availW / W, availH / H));
-    stage.style.transform = `scale(${S.scale})`;
-    // The stage is 960x540 in layout no matter how it is drawn, so its
-    // unscaled height would push the bin off screen. Collapse the difference.
-    stage.style.marginBottom = `${H * S.scale - H}px`;
-    binEl.style.width = `${W * S.scale}px`;
-  }
+  S.scale = Math.max(0.2, Math.min(availW / W, availH / H));
+  stage.style.transform = `scale(${S.scale})`;
+  // The stage is 960x540 in layout no matter how it is drawn, so its unscaled
+  // height would sit under the window. Collapse the difference.
+  stage.style.marginBottom = `${H * S.scale - H}px`;
   emit("selection");
 }
 addEventListener("resize", fit);

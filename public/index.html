@@ -66,6 +66,10 @@
     <svg viewBox="0 0 24 24"><path d="M9.5 9a2.5 2.5 0 113.4 2.3c-.6.3-.9.9-.9 1.6v.6"/><circle cx="12" cy="17" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="8.5"/></svg>
   </button>
   <button id="theme" class="icon" title="Theme" aria-label="Theme"></button>
+  <button id="binToggle" class="ghost bin-toggle" aria-expanded="false" title="Source material">
+    <svg viewBox="0 0 24 24"><path d="M4.5 5.5h15v13h-15zM4.5 13.5h4l1.4 2.3h4.2l1.4-2.3h4"/></svg>
+    Source material <span id="binCount" class="count"></span>
+  </button>
   <button id="present" class="ghost strong">Present</button>
   <button id="export" class="primary" disabled>Export</button>
 </div>
@@ -114,27 +118,6 @@
       <div id="guides"></div>
     </div>
 
-    <!-- The bin is deck-wide on purpose: source material does not divide by slide. -->
-    <div class="bin">
-      <div class="bin-head">
-        <button id="binToggle" class="ghost" aria-expanded="false">
-          <span class="caret">&rsaquo;</span> Source material <span id="binCount" class="count"></span>
-        </button>
-        <span class="hint">checked against every slide, shown on none of them</span>
-      </div>
-      <div id="binBody" hidden>
-        <div id="binDrop" class="drop">
-          <button id="binUpload" class="ghost upload">
-            <svg viewBox="0 0 24 24"><path d="M12 15.5V5.5M8.5 9L12 5.5 15.5 9M5 15.5v3h14v-3"/></svg>
-            Upload lecture slides
-          </button>
-          <span class="hint">PDF or images - drop them anywhere here. Each PDF page becomes one source.</span>
-        </div>
-        <div id="binList"></div>
-        <textarea id="binAdd" spellcheck="false" rows="2"
-          placeholder="Or paste a passage, a definition, a slide. Enter to add, shift+enter for a new line."></textarea>
-      </div>
-    </div>
   </section>
 
   <aside class="critique">
@@ -142,6 +125,34 @@
     <div id="findings"></div>
   </aside>
 </main>
+
+<!-- One bin for the deck, and it looks like one: it spans the whole editor
+     rather than sitting under whichever slide you are on. -->
+<div id="bin" hidden>
+  <div class="bin-head">
+    <span class="bin-title">Source material</span>
+    <span class="hint">checked against every slide, shown on none of them</span>
+    <span class="spacer"></span>
+    <button id="binClose" class="icon" title="Close" aria-label="Close">
+      <svg viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
+    </button>
+  </div>
+  <div class="bin-add">
+    <div id="binDrop" class="drop">
+      <button id="binUpload" class="ghost upload">
+        <svg viewBox="0 0 24 24"><path d="M12 15.5V5.5M8.5 9L12 5.5 15.5 9M5 15.5v3h14v-3"/></svg>
+        Upload lecture slides
+      </button>
+      <span class="hint">PDF or images - drop them anywhere here. Each PDF page becomes one source.</span>
+    </div>
+    <textarea id="binAdd" spellcheck="false" rows="2"
+      placeholder="Or paste a passage, a definition, a slide. Enter to add, shift+enter for a new line."></textarea>
+  </div>
+  <div id="binList"></div>
+  <p id="binEmpty" class="hint empty" hidden>
+    Nothing in the bin yet. What goes here is what you are learning from, not what you are writing.
+  </p>
+</div>
 
 <input type="file" id="file" accept="image/*" hidden>
 <input type="file" id="sourceFile" accept="application/pdf,image/*" multiple hidden>

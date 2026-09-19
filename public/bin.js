@@ -16,8 +16,12 @@ export function paintBin() {
   S.deck.sources ??= [];
   const n = S.deck.sources.length;
   const count = $("binCount");
-  count.textContent = n ? String(n) : "empty";
-  count.classList.toggle("some", n > 0);
+  if (count) {
+    count.textContent = n ? String(n) : "";
+    count.classList.toggle("some", n > 0);
+  }
+  const empty = $("binEmpty");
+  if (empty) empty.hidden = n > 0;
 
   const list = $("binList");
   list.replaceChildren();
@@ -78,13 +82,15 @@ function addSources(entries) {
 // Whether the bin is open is remembered: it is where your lecture material
 // lives, and someone working from a PDF has it open for the whole session.
 export function showBin(open, focus = false) {
-  $("binBody").hidden = !open;
-  $("binToggle").setAttribute("aria-expanded", String(open));
+  $("bin").hidden = !open;
+  const toggle = $("binToggle");
+  toggle?.setAttribute("aria-expanded", String(open));
+  toggle?.classList.toggle("on", open);
   localStorage.setItem("bin", open ? "open" : "shut");
   emit("fit");
   if (open && focus) $("binAdd").focus();
 }
-export const binOpen = () => !$("binBody").hidden;
+export const binOpen = () => !$("bin").hidden;
 
 /**
  * What a dropped file becomes.
@@ -124,6 +130,8 @@ export async function ingest(files, onImage) {
 
 export function wireBin(onImage) {
   $("binToggle").onclick = () => showBin(!binOpen(), true);
+  const close = $("binClose");
+  if (close) close.onclick = () => showBin(false);
   showBin(localStorage.getItem("bin") === "open");
 
   $("binAdd").onkeydown = (e) => {
