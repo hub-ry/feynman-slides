@@ -366,7 +366,7 @@ function toggleCritic(force) {
   fit();
 }
 const savedCritic = localStorage.getItem("critic");
-toggleCritic(savedCritic ? savedCritic === "shut" : window.innerWidth <= 860);
+toggleCritic(window.innerWidth <= 860 ? true : (savedCritic === "shut"));
 
 // --- buttons --------------------------------------------------------------
 
