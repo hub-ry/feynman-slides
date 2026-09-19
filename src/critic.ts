@@ -629,8 +629,19 @@ export function startCritic(
   let sentBin = "\u0000";
 
   let config: CriticConfig = initialConfig ?? readCriticConfig();
-  let resolvedModeName = "Resolving...";
-  let resolvedProviderType: "gemini" | "openai" | "local" | "claude" | "heuristic" = "heuristic";
+  const initialType: "gemini" | "openai" | "local" | "claude" | "heuristic" =
+    config.provider === "auto" ? (process.env.ANTHROPIC_API_KEY ? "claude" : "heuristic") : config.provider;
+  let resolvedModeName =
+    initialType === "claude"
+      ? "Claude AI"
+      : initialType === "heuristic"
+      ? "Local Heuristic (Offline)"
+      : initialType === "gemini"
+      ? "Gemini"
+      : initialType === "openai"
+      ? "OpenAI"
+      : "Resolving...";
+  let resolvedProviderType: "gemini" | "openai" | "local" | "claude" | "heuristic" = initialType;
 
   /**
    * A provider that has already failed stays failed until the config changes.

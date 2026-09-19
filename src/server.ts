@@ -375,12 +375,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (req.method === "POST" && p === "/api/critic/mode") {
-    const { mode, slug } = await body(req);
+    const { mode } = await body(req);
     const config = store.readCriticConfig();
     config.provider = mode;
     store.writeCriticConfig(config);
-    if (slug && live.has(slug)) {
-      live.get(slug)?.critic.setMode(mode);
+    for (const [, d] of live) {
+      d.critic.setMode(mode);
     }
     const resolved = await resolveProvider(config);
     return json(res, 200, { ok: true, mode, activeMode: resolved.name });
