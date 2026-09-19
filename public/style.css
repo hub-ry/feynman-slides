@@ -83,7 +83,38 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible,
 a:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
 button svg { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: currentColor;
-  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 256x256 Phosphor icons: maintain proper stroke proportions rather than 24-box stroke */
+svg.ph,
+svg[viewBox="0 0 256 256"],
+button svg.ph,
+button svg[viewBox="0 0 256 256"] {
+  stroke-width: 22px;
+}
+svg.ph[width="16"], svg[viewBox="0 0 256 256"][width="16"],
+button svg.ph[width="16"], button svg[viewBox="0 0 256 256"][width="16"],
+svg.ph[width="15"], svg[viewBox="0 0 256 256"][width="15"],
+button svg.ph[width="15"], button svg[viewBox="0 0 256 256"][width="15"],
+svg.ph[width="14"], svg[viewBox="0 0 256 256"][width="14"],
+button svg.ph[width="14"], button svg[viewBox="0 0 256 256"][width="14"],
+svg.ph[width="13"], svg[viewBox="0 0 256 256"][width="13"],
+button svg.ph[width="13"], button svg[viewBox="0 0 256 256"][width="13"] {
+  stroke-width: 24px;
+}
+svg.ph[width="12"], svg[viewBox="0 0 256 256"][width="12"],
+button svg.ph[width="12"], button svg[viewBox="0 0 256 256"][width="12"],
+svg.ph[width="11"], svg[viewBox="0 0 256 256"][width="11"],
+button svg.ph[width="11"], button svg[viewBox="0 0 256 256"][width="11"] {
+  stroke-width: 26px;
+}
+
+/* 3-dot overflow menus are solid dots, not hollow rings */
+#deckMenu svg,
+.card-menu-btn svg {
+  fill: currentColor !important;
+  stroke: none !important;
+}
 
 button.icon { width: 32px; height: 32px; padding: 0; justify-content: center; border-radius: 50%;
   position: relative; }
@@ -142,7 +173,8 @@ button.logo:hover { background: var(--sel); filter: brightness(1.1); }
 }
 .home-search-wrap .search-icon {
   position: absolute; left: .65rem; width: 14px; height: 14px;
-  color: var(--faint); pointer-events: none;
+  color: var(--dim); pointer-events: none; fill: none; stroke: currentColor;
+  stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
 }
 .home-search {
   height: 32px; padding: 0 .7rem 0 2rem; border-radius: 100px;
@@ -437,7 +469,7 @@ textarea.editor::placeholder { color: currentColor; opacity: .35; }
   height: 28px; min-width: 28px; padding: 0 .4rem; justify-content: center;
   border-radius: 6px; font-size: 13px; color: var(--ink);
 }
-#formatbar button svg { width: 16px; height: 16px; }
+#formatbar button svg { width: 16px; height: 16px; stroke-width: 2.2; }
 #formatbar button.role { font-size: 12.5px; padding: 0 .5rem; color: var(--dim); }
 #formatbar button.on { background: var(--active); color: var(--sel); }
 #formatbar button.danger:hover svg { stroke: var(--error); }
@@ -480,7 +512,7 @@ textarea.editor::placeholder { color: currentColor; opacity: .35; }
 }
 .bin-toggle svg {
   width: 17px; height: 17px; fill: none; stroke: currentColor;
-  stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round;
 }
 button.bin-toggle.on, button.bin-toggle.on:hover { background: var(--active); color: var(--sel); }
 .bin-toggle .count { color: var(--faint); font-weight: 400; }
@@ -499,7 +531,7 @@ button.bin-toggle.on, button.bin-toggle.on:hover { background: var(--active); co
   text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 #bin .empty { white-space: normal; padding: .2rem .1rem 0; margin: 0; }
 #binClose { width: 26px; height: 26px; }
-#binClose svg { width: 15px; height: 15px; stroke: var(--dim); }
+#binClose svg { width: 15px; height: 15px; stroke: var(--dim); stroke-width: 2.2; }
 
 /* The two ways in sit side by side, because they are the same move: a PDF you
    were handed, or a passage you copied. */
@@ -521,7 +553,7 @@ button.upload {
   border: 1px solid var(--rule); border-radius: 100px; padding: .3rem .8rem;
 }
 button.upload:hover { background: var(--active); border-color: var(--sel); }
-button.upload svg { width: 15px; height: 15px; stroke-width: 1.7; }
+button.upload svg { width: 15px; height: 15px; stroke-width: 2.1; }
 
 /* Full width now, so forty lecture pages read as a wall of cards rather than
    one very long column. */
@@ -1597,6 +1629,7 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   background: var(--bg); border: 1px solid var(--rule); cursor: pointer;
   transition: all .1s ease;
 }
+.rail-icon-btn svg { width: 14px; height: 14px; stroke-width: 2.2; }
 .rail-icon-btn:hover { color: var(--ink); background: var(--hover); border-color: var(--dim); }
 .rail-icon-btn.active {
   background: var(--active); color: var(--sel); border-color: var(--sel); font-weight: 600;

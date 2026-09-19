@@ -261,7 +261,7 @@ function card(f, slideIndex, goTo) {
     const blk = document.createElement("span");
     blk.className = "block-badge";
     blk.title = "Blocks export until resolved or disputed";
-    blk.innerHTML = `${iconSvg("lock-simple", 11)} <span>Blocks</span>`;
+    blk.innerHTML = `${iconSvg("lock-simple", 12)} <span>Blocks</span>`;
     right.append(blk);
   }
 
@@ -307,7 +307,7 @@ function card(f, slideIndex, goTo) {
     dis.className = "finding-dismissed-banner";
     dis.innerHTML = `
       <div class="dis-content">
-        <span class="dis-icon">${iconSvg("check", 11)}</span>
+        <span class="dis-icon">${iconSvg("check", 12)}</span>
         <span class="dis-text" title="${escapeHtml(f.dismissed.reason)}">Disputed: <em>${escapeHtml(f.dismissed.reason)}</em></span>
       </div>
     `;
@@ -336,7 +336,7 @@ function card(f, slideIndex, goTo) {
   const disputeBtn = document.createElement("button");
   disputeBtn.type = "button";
   disputeBtn.className = "dispute-trigger";
-  disputeBtn.innerHTML = `${iconSvg("pencil-simple", 11)} <span>Dispute finding...</span>`;
+  disputeBtn.innerHTML = `${iconSvg("pencil-simple", 13)} <span>Dispute finding...</span>`;
   actions.append(disputeBtn);
   el.append(actions);
 
