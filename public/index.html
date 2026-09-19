@@ -32,6 +32,14 @@
         <span id="folderBreadcrumb" class="folder-crumb" hidden></span>
       </div>
       <div class="home-actions">
+        <div class="home-search-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5l4.5 4.5"/></svg>
+          <input id="homeSearch" class="home-search" type="search" placeholder="Search decks..." aria-label="Search decks">
+        </div>
+        <button id="homeTemplates" class="ghost strong" title="Community stylesheets and templates">
+          <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 9.5h17M9 9.5v10"/></svg>
+          Stylesheets
+        </button>
         <button id="homeNewFolder" class="ghost strong" title="New folder">
           <svg viewBox="0 0 24 24"><path d="M3.5 6.5h5.5l2 2.5h9.5v9.5h-17z"/><path d="M12 11.5v5M9.5 14h5"/></svg>
           New folder
@@ -87,11 +95,12 @@
 
 <!-- Row two: what you can do to the slide in front of you. -->
 <div class="toolbar">
-  <button id="addSlide" class="pill">
+  <button id="addSlide" class="pill" title="New slide  (N)">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="1.5"/><path d="M12 9.5v5M9.5 12h5"/></svg>
     New slide
   </button>
-  <button id="layoutBtn" class="ghost pick">
+  <button id="layoutBtn" class="ghost pick" title="Slide layout  (L)">
+    <span class="toolbar-label">Layout:</span>
     <span id="layoutName">Layout</span>
     <span class="caret">▾</span>
   </button>
@@ -99,21 +108,23 @@
 
   <span class="sep"></span>
 
-  <button id="addText" class="icon" title="Text box">
+  <button id="addText" class="icon" title="Text box  (T)" aria-label="Text box">
     <svg viewBox="0 0 24 24"><path d="M5 7V5.5h14V7M12 5.5v13M9.5 18.5h5"/></svg>
   </button>
-  <button id="addImage" class="icon" title="Image (or just paste one)">
+  <button id="addImage" class="icon" title="Image  (I)" aria-label="Insert image">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="1.5"/><path d="M3.5 15l4.5-4 4 3.5 3.5-3 5 4.5"/><circle cx="9" cy="9.5" r="1.3"/></svg>
   </button>
-  <button id="addShape" class="icon" title="Shape">
+  <button id="addShape" class="icon" title="Shape  (R)" aria-label="Insert shape">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="6.5" width="10" height="10" rx="1.5"/><circle cx="16" cy="14" r="4.5"/></svg>
   </button>
 
   <span class="sep"></span>
 
-  <button id="tplBtn" class="ghost pick" title="Templates">
+  <button id="tplBtn" class="ghost pick" title="Stylesheet & theme">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M3.5 9.5h17M9 9.5v10"/></svg>
+    <span class="toolbar-label">Theme:</span>
     <span id="tplName">Template</span>
+    <span class="caret">▾</span>
   </button>
 
   <span class="spacer"></span>

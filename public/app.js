@@ -202,7 +202,7 @@ const KEYS = [
     run: () => { showBin(true); $("sourceFile").click(); } },
   { group: "Source material", key: "c", label: "Show or hide the critic", btn: "criticBtn", run: toggleCritic },
 
-  { group: "The deck", key: "m", label: "Templates", btn: "tplBtn", run: () => openTemplates() },
+  { group: "The deck", key: "m", label: "Stylesheets & templates", btn: "tplBtn", run: () => openTemplates("community") },
   { group: "The deck", key: "p", label: "Present", btn: "present", run: () => present(S.idx) },
   { group: "The deck", key: "e", label: "Export", btn: "export", run: () => doExport() },
   { group: "The deck", key: "h", label: "All decks", btn: "toHome", run: () => go("#/") },
@@ -383,6 +383,7 @@ addEventListener("pointerdown", (e) => {
   }
 });
 $("tplBtn").onclick = () => openTemplates();
+$("homeTemplates").onclick = () => openTemplates("community");
 $("criticBtn").onclick = () => toggleCritic();
 $("theme").onclick = cycleTheme;
 $("homeTheme").onclick = cycleTheme;
@@ -578,8 +579,26 @@ function createDeckCard(d) {
   return card;
 }
 
+let homeSearchQuery = "";
+
 /** A card per deck: organized by folder with drag-and-drop support. */
 function paintHome(list, folders) {
+  const searchInput = $("homeSearch");
+  if (searchInput) {
+    searchInput.value = homeSearchQuery;
+    searchInput.oninput = (e) => {
+      homeSearchQuery = e.target.value.toLowerCase().trim();
+      paintHome(list, folders);
+    };
+  }
+
+  const effectiveList = homeSearchQuery
+    ? list.filter((d) =>
+        d.title.toLowerCase().includes(homeSearchQuery) ||
+        (d.folder && d.folder.toLowerCase().includes(homeSearchQuery))
+      )
+    : list;
+
   const titleEl = $("homeTitle");
   const crumbEl = $("folderBreadcrumb");
   if (currentFolder) {
@@ -608,13 +627,13 @@ function paintHome(list, folders) {
       className: "folder-chip" + (!currentFolder ? " on" : ""),
       title: "View all decks (or drop here to remove from folder)",
     });
-    allChip.innerHTML = `All decks <span class="count">${list.length}</span>`;
+    allChip.innerHTML = `All decks <span class="count">${effectiveList.length}</span>`;
     allChip.onclick = () => { currentFolder = null; router(); };
     makeFolderDropTarget(allChip, null);
     folderBar.append(allChip);
 
     for (const f of folders) {
-      const count = list.filter((d) => d.folder === f).length;
+      const count = effectiveList.filter((d) => d.folder === f).length;
       const chip = Object.assign(document.createElement("button"), {
         className: "folder-chip" + (currentFolder === f ? " on" : ""),
         title: `Folder: ${f} (drop a deck here to file it)`,
@@ -654,21 +673,25 @@ function paintHome(list, folders) {
   grid.replaceChildren();
 
   if (currentFolder) {
-    const visible = list.filter((d) => d.folder === currentFolder);
+    const visible = effectiveList.filter((d) => d.folder === currentFolder);
     $("homeEmpty").hidden = visible.length > 0;
     if (visible.length === 0) {
-      $("homeEmpty").textContent = `No decks in "${currentFolder}" yet. Drag decks onto this folder chip or click "New deck".`;
+      $("homeEmpty").textContent = homeSearchQuery
+        ? `No decks match "${homeSearchQuery}" in "${currentFolder}".`
+        : `No decks in "${currentFolder}" yet. Drag decks onto this folder chip or click "New deck".`;
     }
     for (const d of visible) grid.append(createDeckCard(d));
     makeFolderDropTarget(grid, currentFolder);
   } else if (folders.length > 0) {
-    $("homeEmpty").hidden = list.length > 0;
-    if (list.length === 0) {
-      $("homeEmpty").textContent = "No decks yet. A deck is one topic you are teaching yourself.";
+    $("homeEmpty").hidden = effectiveList.length > 0;
+    if (effectiveList.length === 0) {
+      $("homeEmpty").textContent = homeSearchQuery
+        ? `No decks match "${homeSearchQuery}".`
+        : "No decks yet. A deck is one topic you are teaching yourself.";
     }
 
     for (const f of folders) {
-      const inFolder = list.filter((d) => d.folder === f);
+      const inFolder = effectiveList.filter((d) => d.folder === f);
       if (!inFolder.length) continue;
       const section = document.createElement("div");
       section.className = "folder-section-drop";
@@ -683,8 +706,8 @@ function paintHome(list, folders) {
       grid.append(section);
     }
 
-    const unfiled = list.filter((d) => !d.folder);
-    if (unfiled.length || folders.some((f) => list.some((d) => d.folder === f))) {
+    const unfiled = effectiveList.filter((d) => !d.folder);
+    if (unfiled.length || folders.some((f) => effectiveList.some((d) => d.folder === f))) {
       const section = document.createElement("div");
       section.className = "folder-section-drop";
       const head = document.createElement("div");
@@ -698,9 +721,11 @@ function paintHome(list, folders) {
       grid.append(section);
     }
   } else {
-    $("homeEmpty").hidden = list.length > 0;
-    $("homeEmpty").textContent = "No decks yet. A deck is one topic you are teaching yourself.";
-    for (const d of list) grid.append(createDeckCard(d));
+    $("homeEmpty").hidden = effectiveList.length > 0;
+    $("homeEmpty").textContent = homeSearchQuery
+      ? `No decks match "${homeSearchQuery}".`
+      : "No decks yet. A deck is one topic you are teaching yourself.";
+    for (const d of effectiveList) grid.append(createDeckCard(d));
   }
 }
 

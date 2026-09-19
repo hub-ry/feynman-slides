@@ -89,8 +89,8 @@ const SAMPLE = (t) => {
   );
 };
 
-export async function openTemplates(tab = "installed") {
-  const { body, close, dlg } = modal("Templates", "The look of a deck lives here, not on the slide.");
+export async function openTemplates(tab = "community") {
+  const { body, close, dlg } = modal("Stylesheets & Templates", "The visual identity of your deck. Pick a community theme, or design your own.");
   dlg.classList.add("wide");
   const tabs = document.createElement("nav");
   tabs.className = "tabs";
@@ -103,7 +103,7 @@ export async function openTemplates(tab = "installed") {
     panel.replaceChildren();
     panel.append(await PANES[name]({ close, show }));
   };
-  for (const [name, label] of [["installed", "Installed"], ["community", "Community"], ["make", "Make one"]]) {
+  for (const [name, label] of [["community", "Crowdsourced Hub"], ["installed", "My Stylesheets"], ["make", "Create Stylesheet"]]) {
     const b = button(label, "tab", () => show(name));
     b.dataset.tab = name;
     tabs.append(b);
@@ -113,7 +113,7 @@ export async function openTemplates(tab = "installed") {
 
 function card(t, actions) {
   const el = document.createElement("div");
-  el.className = "tcard" + (S.deck.template === t.id ? " using" : "");
+  el.className = "tcard" + (S.deck?.template === t.id ? " using" : "");
   const shot = document.createElement("div");
   shot.className = "tshot";
   shot.append(miniature(SAMPLE(normalize(t)), normalize(t), { width: 236 }));
@@ -150,20 +150,29 @@ const PANES = {
     grid.className = "tgrid";
     for (const t of S.templates) {
       const actions = [];
-      if (S.deck.template === t.id) {
+      if (S.deck?.template === t.id) {
         actions.push(Object.assign(document.createElement("span"), { className: "using-tag", textContent: "in use" }));
-      } else {
+      } else if (S.deck) {
         actions.push(button("Use", "primary small", () => { ops.setTemplate(t.id); close(); }));
       }
       actions.push(button(t.builtin ? "Duplicate" : "Edit", "small ghost", () => {
         close();
         openEditor(t.id, { fork: Boolean(t.builtin) });
       }));
+      actions.push(button("Export", "small ghost", async () => {
+        const rawTpl = await fetch(`/api/templates/raw/${t.id}`).then((r) => r.json()).catch(() => null);
+        if (!rawTpl) return alertLine(wrap, "could not load template");
+        const blob = new Blob([JSON.stringify(rawTpl, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${t.id}.json`;
+        a.click();
+      }));
       if (!t.builtin) {
         actions.push(button("Remove", "small ghost danger", async () => {
           const { ok, data } = await post("/api/templates/remove", { id: t.id });
           if (!ok) return alertLine(wrap, data.error);
-          if (S.deck.template === t.id) ops.setTemplate("feynman");
+          if (S.deck?.template === t.id) ops.setTemplate("feynman");
           await loadTemplates();
           show("installed");
         }));
@@ -174,51 +183,140 @@ const PANES = {
     if (S.templatesDir) {
       wrap.append(Object.assign(document.createElement("p"), {
         className: "folder",
-        textContent: `Your templates are files in ${S.templatesDir} - drop a .json in there and it appears here.`,
+        textContent: `Your stylesheets live in ${S.templatesDir} - drop a .json in there and it appears here.`,
       }));
     }
     return wrap;
   },
 
-  async community({ show }) {
+  async community({ show, close }) {
     const wrap = document.createElement("div");
+    wrap.className = "crowd-wrap";
+
     const r = await fetch("/api/templates/catalog").then((x) => x.json()).catch(() => null);
-    const line = document.createElement("p");
-    line.className = "folder";
-    line.textContent = !r
-      ? "Could not read the catalogue."
-      : r.error
-        ? `Showing the bundled catalogue - the registry did not answer (${r.error}).`
-        : r.source === "bundled"
-          ? "The catalogue that ships with the tool. Point FEYNMAN_TEMPLATE_REGISTRY at your own to add to it."
-          : `From ${r.source}.`;
-    wrap.append(line);
+    const allEntries = r?.entries ?? [];
+
+    const topBar = document.createElement("div");
+    topBar.className = "crowd-topbar";
+
+    const searchInput = document.createElement("input");
+    searchInput.type = "search";
+    searchInput.className = "crowd-search";
+    searchInput.placeholder = "🔍 Search crowdsourced stylesheets by name, description, author...";
+    topBar.append(searchInput);
+
+    const publishBtn = button("+ Publish a stylesheet", "ghost small strong", () => {
+      openPublishDialog(() => show("community"));
+    });
+    topBar.append(publishBtn);
+
+    wrap.append(topBar);
+
+    const filterRow = document.createElement("div");
+    filterRow.className = "crowd-tags";
+    const TAGS = [
+      { id: "all", label: "All Stylesheets" },
+      { id: "study", label: "🧠 Study & Anki" },
+      { id: "academic", label: "🎓 Cornell & Lecture" },
+      { id: "pitch", label: "🚀 Modern Pitch" },
+      { id: "minimal", label: "✨ Minimal & Swiss" },
+      { id: "dark", label: "💻 Dark & Code" },
+    ];
+
+    let currentTag = "all";
+    let filterText = "";
 
     const grid = document.createElement("div");
-    grid.className = "tgrid";
-    for (const e of r?.entries ?? []) {
-      const install = e.installed
-        ? Object.assign(document.createElement("span"), { className: "using-tag", textContent: "installed" })
-        : button("Install", "primary small", async (ev) => {
+    grid.className = "tgrid crowd-grid";
+
+    const renderGrid = () => {
+      grid.replaceChildren();
+      const filtered = allEntries.filter((e) => {
+        const textMatch = !filterText ||
+          e.name.toLowerCase().includes(filterText) ||
+          e.description.toLowerCase().includes(filterText) ||
+          e.id.toLowerCase().includes(filterText) ||
+          (e.author && e.author.toLowerCase().includes(filterText));
+        if (!textMatch) return false;
+        if (currentTag === "all") return true;
+        const tagTokens = [e.id, e.name, e.description, ...(e.tags ?? [])].join(" ").toLowerCase();
+        if (currentTag === "study") return tagTokens.includes("anki") || tagTokens.includes("study") || tagTokens.includes("flashcard");
+        if (currentTag === "academic") return tagTokens.includes("cornell") || tagTokens.includes("lecture") || tagTokens.includes("course");
+        if (currentTag === "pitch") return tagTokens.includes("pitch") || tagTokens.includes("modern") || tagTokens.includes("canva");
+        if (currentTag === "minimal") return tagTokens.includes("minimal") || tagTokens.includes("swiss") || tagTokens.includes("handout");
+        if (currentTag === "dark") return tagTokens.includes("dark") || tagTokens.includes("terminal") || tagTokens.includes("code") || tagTokens.includes("chalkboard");
+        return true;
+      });
+
+      if (!filtered.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty-note";
+        empty.textContent = "No crowdsourced stylesheets match this search.";
+        grid.append(empty);
+        return;
+      }
+
+      for (const e of filtered) {
+        const isInstalled = e.installed || S.templates.some((t) => t.id === e.id);
+        const isUsing = S.deck?.template === e.id;
+        const actions = [];
+
+        if (isUsing) {
+          actions.push(Object.assign(document.createElement("span"), { className: "using-tag", textContent: "in use" }));
+        } else if (isInstalled && S.deck) {
+          actions.push(button("Apply", "primary small", () => {
+            ops.setTemplate(e.id);
+            close();
+          }));
+        } else {
+          actions.push(button("Install" + (S.deck ? " & Apply" : ""), "primary small", async (ev) => {
             ev.target.disabled = true;
-            ev.target.textContent = "installing";
+            ev.target.textContent = "installing...";
             const { ok, data } = await post("/api/templates/install", { url: e.url });
             if (!ok) return alertLine(wrap, data.error);
             await loadTemplates();
-            show("community");
-          });
-      grid.append(card({ ...e, layouts: [], roles: {} }, [
-        install,
-        Object.assign(document.createElement("span"), { className: "ver", textContent: `v${e.version}` }),
-      ]));
-    }
+            if (S.deck) ops.setTemplate(e.id);
+            close();
+            emit("say", `applied ${e.name} stylesheet`);
+          }));
+        }
+
+        actions.push(Object.assign(document.createElement("span"), {
+          className: "ver",
+          textContent: `v${e.version ?? "1.0"}`,
+        }));
+
+        grid.append(card({ ...e, layouts: [], roles: {} }, actions));
+      }
+    };
+
+    TAGS.forEach((tag) => {
+      const chip = Object.assign(document.createElement("button"), {
+        className: "tag-chip" + (currentTag === tag.id ? " on" : ""),
+        textContent: tag.label,
+        onclick: () => {
+          currentTag = tag.id;
+          filterRow.querySelectorAll(".tag-chip").forEach((c, idx) => c.classList.toggle("on", TAGS[idx].id === currentTag));
+          renderGrid();
+        },
+      });
+      filterRow.append(chip);
+    });
+    wrap.append(filterRow);
+
+    searchInput.oninput = () => {
+      filterText = searchInput.value.trim().toLowerCase();
+      renderGrid();
+    };
+
+    renderGrid();
     wrap.append(grid);
 
-    // Sharing one is the same shape as installing one: a file at a URL.
+    // Install from URL footer
     const form = document.createElement("form");
     form.className = "fromurl";
     const input = Object.assign(document.createElement("input"), {
-      placeholder: "https://.../template.json",
+      placeholder: "Or install by public template URL (https://.../template.json)",
       title: "Install a template someone published",
     });
     form.append(input, button("Install from URL", "small", () => {}));
@@ -526,5 +624,65 @@ export async function openMoveDialog(slug, deckTitle, currentFolder, onDone) {
   });
 
   actions.append(newBtn, moveBtn);
+  body.append(actions);
+}
+
+// --- publish template to community -----------------------------------------
+
+export async function openPublishDialog(onDone) {
+  await loadTemplates();
+  const { body, close } = modal("Publish Stylesheet to Community", "Share your custom stylesheet so it appears in the community registry.");
+
+  const desc = Object.assign(document.createElement("p"), {
+    className: "folder",
+    textContent: "Select one of your installed stylesheets to publish or export:",
+  });
+  body.append(desc);
+
+  const selectList = document.createElement("div");
+  selectList.className = "move-list";
+
+  let chosen = S.templates[0]?.id;
+
+  const renderSelect = () => {
+    selectList.replaceChildren();
+    for (const t of S.templates) {
+      const item = document.createElement("div");
+      item.className = "move-item" + (chosen === t.id ? " on" : "");
+      item.innerHTML = `<span>🎨 <strong>${t.name}</strong> <small style="color:var(--faint)">(${t.id})</small></span>`;
+      item.onclick = () => { chosen = t.id; renderSelect(); };
+      selectList.append(item);
+    }
+  };
+  renderSelect();
+  body.append(selectList);
+
+  const actions = document.createElement("div");
+  actions.className = "move-actions";
+
+  const exportBtn = button("Export as JSON", "ghost small", async () => {
+    const rawTpl = await fetch(`/api/templates/raw/${chosen}`).then((r) => r.json()).catch(() => null);
+    if (!rawTpl) return alertLine(body, "could not load template JSON");
+    const blob = new Blob([JSON.stringify(rawTpl, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${chosen}.json`;
+    a.click();
+  });
+
+  const pubBtn = button("Publish to Registry", "primary", async () => {
+    pubBtn.disabled = true;
+    pubBtn.textContent = "Publishing...";
+    const { ok, data } = await post("/api/templates/community/publish", { id: chosen });
+    if (!ok) {
+      pubBtn.disabled = false;
+      pubBtn.textContent = "Publish to Registry";
+      return alertLine(body, data?.error ?? "publish failed");
+    }
+    close();
+    onDone?.();
+  });
+
+  actions.append(exportBtn, pubBtn);
   body.append(actions);
 }
