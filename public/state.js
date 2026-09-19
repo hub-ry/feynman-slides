@@ -11,7 +11,12 @@ import { normalize, BUILTIN, pick } from "./theme.js";
 export const S = {
   slug: null,
   deck: { title: "", slides: [], sources: [], template: "feynman" },
-  critiques: { findings: {}, dismissed: [] },
+  /**
+   * `reviewed` is the fingerprint of the text each slide was last read at, so
+   * the pane can tell "clean" from "not looked at yet" from "looked at words
+   * you have since rewritten" - three states an empty findings list cannot.
+   */
+  critiques: { findings: {}, dismissed: [], reviewed: {} },
   templates: [normalize({ ...BUILTIN[0], builtin: true })],
   idx: 0,
   /** Element ids. A Set because "selected" is a property of an element, not an ordering. */
@@ -21,7 +26,6 @@ export const S = {
   reviewing: new Set(),
   /** The layout the last slide was made from, so N can repeat it. */
   lastLayout: "title-body",
-  blocking: 0,
 };
 
 const subs = new Map();

@@ -1091,6 +1091,45 @@ button.upload svg { width: 15px; height: 15px; stroke-width: 1.7; }
   border-color: var(--sel);
 }
 
+/* The pane is reading the slide you are looking at, rather than showing you
+   the verdict on a slide you have left. */
+.critique-empty.working .empty-icon {
+  color: var(--sel);
+  background: var(--active);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* A critique that no longer matches the words under it, while it is re-read. */
+.critique-recheck {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--dim);
+  padding: .3rem .55rem;
+  border-radius: 6px;
+  background: var(--hover);
+  border: 1px dashed var(--rule);
+}
+.critique-recheck .recheck-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--dim);
+}
+.critique-recheck.reading {
+  color: var(--sel);
+  background: var(--active);
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--sel) 25%, transparent);
+}
+.critique-recheck.reading .recheck-pip {
+  background: var(--sel);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
 /* --- dialogs ------------------------------------------------------------- */
 dialog.sheet {
   border: 0; padding: 0; border-radius: 14px; background: var(--panel); color: var(--ink);
@@ -1591,6 +1630,10 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 .thumb .score-badge.tier-b { background: rgba(37, 99, 235, 0.18); color: #60a5fa; border-color: rgba(37, 99, 235, 0.35); }
 .thumb .score-badge.tier-c { background: rgba(217, 119, 6, 0.18); color: #fbbf24; border-color: rgba(217, 119, 6, 0.35); }
 .thumb .score-badge.tier-d { background: rgba(220, 38, 38, 0.18); color: #f87171; border-color: rgba(220, 38, 38, 0.35); }
+/* Nothing written on the slide, so there is no grade to give. */
+.thumb .score-badge.tier-none { background: var(--hover); color: var(--faint); border-color: var(--rule); }
+/* A grade the critic has not confirmed against the words now on the slide. */
+.thumb .score-badge.unsettled { opacity: .45; }
 
 [data-theme="light"] .thumb .score-badge.tier-a-plus { background: rgba(16, 185, 129, 0.12); color: #047857; border-color: rgba(16, 185, 129, 0.25); }
 [data-theme="light"] .thumb .score-badge.tier-a { background: rgba(6, 182, 212, 0.12); color: #0e7490; border-color: rgba(6, 182, 212, 0.25); }

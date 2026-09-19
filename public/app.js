@@ -11,7 +11,7 @@ import * as ops from "./ops.js";
 import { fit, paintCanvas, stopEditing, addImageFile, currentPointer, armTool, getArmedTool, disarmTool } from "./canvas.js";
 import { paintRail, scaleRail } from "./rail.js";
 import { paintFormat, applyMark, toggleList } from "./format.js";
-import { paintFindings, connect, disconnect } from "./critic.js";
+import { paintFindings, connect, disconnect, blockingNow } from "./critic.js";
 import { paintBin, wireBin, showBin, binOpen } from "./bin.js";
 import { openLayouts, openTemplates, openNewDeck, openMoveDialog } from "./library.js";
 import { present } from "./present.js";
@@ -42,7 +42,7 @@ function paintToolbar() {
 }
 
 function paintGate() {
-  const blocking = S.blocking;
+  const blocking = blockingNow();
   $("export").disabled = blocking > 0 || !S.slug;
   $("gate").hidden = !blocking;
   $("gate").textContent = blocking ? `${blocking} unresolved` : "";
@@ -494,14 +494,23 @@ export function openExportModal(slug, title) {
 
 async function doExport() {
   if ($("export").disabled) return;
+  // The server exports what is on disk, and the ordinary save is debounced.
+  await save(true);
   const { ok, data } = await api("/export", { method: "POST" });
   if (ok) {
     say(`Exported ${S.deck.title}`);
     openExportModal(S.slug, S.deck.title);
   } else {
+    // The server refused, so its view of what is blocking is the one that
+    // counts. Take it rather than guess at a number: whatever we are holding
+    // disagrees with it, and the pane has to show what actually stood in the
+    // way, on the slide it is on.
     say(data.error ?? "export refused");
-    S.blocking = data.findings?.length ?? 1;
-    paintGate();
+    for (const f of data.findings ?? []) {
+      const list = (S.critiques.findings[f.slideKey] ??= []);
+      if (!list.some((x) => x.id === f.id)) list.push(f);
+    }
+    emit("findings"); emit("gate");
     toggleCritic(true);
   }
 }
@@ -523,8 +532,9 @@ async function load(next) {
   S.deck = r.deck;
   S.deck.sources ??= [];
   S.critiques = r.state;
-  S.blocking = r.blocking;
+  S.critiques.reviewed ??= {};
   S.criticMode = r.criticMode ?? "auto";
+  S.criticProvider = r.criticProvider ?? "heuristic";
   S.idx = 0;
   S.editing = null;
   deselect();

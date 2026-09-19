@@ -1,36 +1,96 @@
 // The critic, from the browser's side: when to ask, and the pane that shows
 // what came back.
 //
-// Two moments, unchanged from the first version because they are the whole
-// idea: a PAUSE while typing is advisory - a half-typed bullet is not a
-// finding - and FINISHING a text box is the firm pass.
+// Three moments now, where there were two. A PAUSE while typing is advisory -
+// a half-typed bullet is not a finding - and FINISHING a text box is the firm
+// pass. The third is ARRIVING at a slide: the pane is about the slide you are
+// looking at, so landing on one whose critique is missing or out of date has
+// to go get it. Without that, the pane answered a question about the slide you
+// were on a minute ago, and answered it confidently.
 
 import { S, api, save, emit, slide } from "./state.js";
 import { iconSvg } from "./icons.js";
+import { slideDigest, stillApplies, hasText } from "./readable.js";
 
 const $ = (id) => document.getElementById(id);
 
-const askReview = (firm) =>
-  S.slug && api("/review", { method: "POST", body: JSON.stringify({ slideId: slide()?.id, firm }) });
+const askReview = (slideId, firm) =>
+  S.slug && slideId && api("/review", { method: "POST", body: JSON.stringify({ slideId, firm }) });
 
 const PAUSE_MS = 2000;
 let pauseTimer = null;
 
 export function schedulePause() {
   clearTimeout(pauseTimer);
-  pauseTimer = setTimeout(async () => { await save(true); askReview(false); }, PAUSE_MS);
+  // The slide is captured now, not in two seconds. The timer used to read the
+  // current slide when it fired, so typing on one slide and stepping to the
+  // next within the pause sent the wrong slide for review - and the finding
+  // came back attached to a slide nobody had touched.
+  const slideId = slide()?.id;
+  pauseTimer = setTimeout(async () => { await save(true); askReview(slideId, false); }, PAUSE_MS);
 }
 
 export async function firmReview() {
   clearTimeout(pauseTimer);
   const recheckBtn = $("criticRecheck");
   if (recheckBtn) recheckBtn.classList.add("busy");
+  const slideId = slide()?.id;
   await save(true);
   try {
-    await askReview(true);
+    await askReview(slideId, true);
   } finally {
     setTimeout(() => recheckBtn?.classList.remove("busy"), 600);
   }
+}
+
+// --- is the critique on screen about the words on the slide? --------------
+
+/**
+ * Findings that still quote something written on the slide.
+ *
+ * The server prunes the same ones, but the browser has the newer copy of the
+ * deck - it is the one being typed into - so it has to make the same
+ * judgement rather than wait to be told. Everything that counts findings
+ * reads them through here: the pane, the rail flag, the underlines and the
+ * export gate agree because they ask the same question.
+ */
+export function liveOn(slide) {
+  if (!slide) return [];
+  return (S.critiques.findings[slide.id] ?? []).filter((f) => stillApplies(f, slide));
+}
+
+/** Where a slide's critique stands against what is written on it now. */
+export function standing(slide) {
+  if (!slide || !hasText(slide)) return "empty";
+  if (S.reviewing.has(slide.id)) return "reading";
+  return S.critiques.reviewed?.[slide.id]?.digest === slideDigest(slide) ? "current" : "stale";
+}
+
+// One ask per slide per version of its text, so a repaint storm cannot turn
+// into a request storm.
+const asked = new Map();
+
+/**
+ * Make sure the slide in front of you has been read at the words now on it.
+ *
+ * Not while a text box is open: that moment belongs to the pause timer, and
+ * asking for a firm review of a sentence someone is halfway through writing
+ * is the one thing the critic is told not to do.
+ */
+export async function ensureReviewed() {
+  const cur = slide();
+  if (!S.slug || !cur || S.editing) return;
+  if (!hasText(cur)) return;
+
+  const now = slideDigest(cur);
+  if (S.critiques.reviewed?.[cur.id]?.digest === now) return;
+  if (S.reviewing.has(cur.id) || asked.get(cur.id) === now) return;
+
+  asked.set(cur.id, now);
+  // Saved first, or the server reviews the copy on disk, records ITS
+  // fingerprint, and we come straight back here to ask again.
+  await save(true);
+  await askReview(cur.id, true);
 }
 
 // --- the stream -----------------------------------------------------------
@@ -42,16 +102,23 @@ export function connect() {
   stream.addEventListener("reviewing", (e) => {
     S.reviewing.add(JSON.parse(e.data).slideKey);
     emit("status");
+    emit("findings");
   });
   stream.addEventListener("idle", (e) => {
     S.reviewing.delete(JSON.parse(e.data).slideKey);
     emit("status");
+    emit("findings");
   });
   stream.addEventListener("findings", (e) => {
-    const { slideKey, findings, blocking, criticMode } = JSON.parse(e.data);
+    const { slideKey, findings, criticMode, criticProvider, digest } = JSON.parse(e.data);
     S.critiques.findings[slideKey] = findings;
-    S.blocking = blocking;
+    if (digest) {
+      S.critiques.reviewed ??= {};
+      S.critiques.reviewed[slideKey] = { digest };
+    }
+    asked.delete(slideKey);
     if (criticMode) S.criticMode = criticMode;
+    if (criticProvider) S.criticProvider = criticProvider;
     emit("findings");
     emit("gate");
   });
@@ -63,13 +130,22 @@ export function disconnect() { stream?.close(); stream = null; }
 
 /** The quotes the critic flagged, so the box on the slide can underline itself. */
 export function flagged() {
-  return (S.critiques.findings[slide()?.id] ?? [])
+  return liveOn(slide())
     .filter((f) => !f.dismissed && f.severity !== "note")
     .map((f) => f.quote);
 }
 
-export const openOn = (slideId) =>
-  (S.critiques.findings[slideId] ?? []).filter((f) => !f.dismissed && f.severity !== "note").length;
+/** How many unresolved findings a slide is carrying, for the rail's flag. */
+export const openOn = (slide) =>
+  liveOn(slide).filter((f) => !f.dismissed && f.severity !== "note").length;
+
+/**
+ * What stands between this deck and an export, counted here rather than taken
+ * from the server, so the gate, the pane and the rail cannot disagree while
+ * there are edits the server has not seen yet.
+ */
+export const blockingNow = () =>
+  S.deck.slides.reduce((n, s) => n + openOn(s), 0);
 
 // --- the pane -------------------------------------------------------------
 
@@ -92,9 +168,9 @@ function bindHeaderEvents(goTo) {
   if (engineBtn) {
     engineBtn.onclick = async (e) => {
       e.stopPropagation();
-      const isHeuristic = (S.criticMode ?? "heuristic") === "heuristic";
-      const next = isHeuristic ? "claude" : "heuristic";
-      S.criticMode = next;
+      const next = S.criticProvider === "heuristic" ? "claude" : "heuristic";
+      S.criticProvider = next;
+      S.criticMode = next === "heuristic" ? "Local Heuristic" : "Claude AI";
       updateEngineUI();
       await fetch("/api/critic/mode", {
         method: "POST",
@@ -129,21 +205,25 @@ function bindHeaderEvents(goTo) {
   }
 }
 
+/**
+ * The pill names the engine that actually ran.
+ *
+ * It used to compare the engine's DISPLAY name against the string "heuristic",
+ * which nothing ever equals - so a deck falling back to the offline critic
+ * went on showing "Claude", and the one thing the pill exists to tell you was
+ * the one thing it could not say.
+ */
 function updateEngineUI() {
-  const isHeuristic = (S.criticMode ?? "heuristic") === "heuristic";
+  const provider = S.criticProvider ?? "heuristic";
+  const isHeuristic = provider === "heuristic";
   const dot = $("criticEngineDot");
   const label = $("criticEngineLabel");
   const btn = $("criticEngineBtn");
-  if (dot) {
-    dot.className = `engine-dot ${isHeuristic ? "heuristic" : "claude"}`;
-  }
-  if (label) {
-    label.textContent = isHeuristic ? "Local" : "Claude";
-  }
+  const NAMES = { heuristic: "Local", claude: "Claude", gemini: "Gemini", openai: "OpenAI", local: "Local model" };
+  if (dot) dot.className = `engine-dot ${isHeuristic ? "heuristic" : "claude"}`;
+  if (label) label.textContent = NAMES[provider] ?? "Local";
   if (btn) {
-    btn.title = isHeuristic
-      ? "Engine: Local Heuristic (Click to switch to Claude)"
-      : "Engine: Claude AI (Click to switch to Local)";
+    btn.title = `${S.criticMode ?? "Local Heuristic"} - click to switch to ${isHeuristic ? "Claude" : "the local heuristic"}`;
   }
 }
 
@@ -236,10 +316,14 @@ function card(f, slideIndex, goTo) {
     restore.className = "dis-restore-btn";
     restore.textContent = "Restore";
     restore.title = "Re-enable this finding";
-    restore.onclick = () => {
+    // Re-opening a finding is a server-side fact. Doing it only in the browser
+    // meant the dispute was still on disk: the finding came back on reload,
+    // and the critic still believed it had been told to drop the subject.
+    restore.onclick = async () => {
+      restore.disabled = true;
+      const { ok } = await api("/restore", { method: "POST", body: JSON.stringify({ id: f.id }) });
+      if (!ok) { restore.disabled = false; return; }
       delete f.dismissed;
-      const allActive = Object.values(S.critiques.findings || {}).flat().filter((x) => !x.dismissed && x.severity !== "note");
-      S.blocking = allActive.length;
       emit("findings"); emit("gate"); emit("canvas"); emit("rail");
     };
     dis.append(restore);
@@ -293,13 +377,12 @@ function card(f, slideIndex, goTo) {
       const val = input.value.trim();
       if (!val) return;
       submitBtn.disabled = true;
-      const { ok, data } = await api("/dismiss", {
+      const { ok } = await api("/dismiss", {
         method: "POST",
         body: JSON.stringify({ id: f.id, reason: val }),
       });
       if (ok) {
         f.dismissed = { reason: val };
-        S.blocking = data.blocking;
         emit("findings"); emit("gate"); emit("canvas"); emit("rail");
       } else {
         submitBtn.disabled = false;
@@ -310,18 +393,39 @@ function card(f, slideIndex, goTo) {
   return el;
 }
 
+/** A one-line banner above a critique that is being re-checked. */
+function recheckBanner(state, index) {
+  const el = document.createElement("div");
+  el.className = "critique-recheck" + (state === "reading" ? " reading" : "");
+  el.innerHTML = `
+    <span class="recheck-pip"></span>
+    <span>${state === "reading" ? `Reading slide ${index + 1}` : `Slide ${index + 1} changed since this was written`}</span>
+  `;
+  return el;
+}
+
+function emptyState({ icon, title, desc, clean = false, working = false }) {
+  const el = document.createElement("div");
+  el.className = "critique-empty" + (clean ? " clean" : "") + (working ? " working" : "");
+  el.innerHTML = `
+    <div class="empty-icon">${iconSvg(icon, 22)}</div>
+    <div class="empty-title">${escapeHtml(title)}</div>
+    <p class="empty-desc">${escapeHtml(desc)}</p>
+  `;
+  return el;
+}
+
 export function paintFindings(goTo) {
   bindHeaderEvents(goTo);
   updateEngineUI();
 
   const curSlide = slide();
-  const curSlideId = curSlide?.id;
-  const curFindings = curSlideId ? (S.critiques.findings[curSlideId] ?? []) : [];
+  const state = standing(curSlide);
+  const curFindings = liveOn(curSlide);
   const curActive = curFindings.filter((f) => !f.dismissed);
 
-  const allEntries = Object.entries(S.critiques.findings ?? {});
-  const allFindings = allEntries.flatMap(([, list]) => list);
-  const allActive = allFindings.filter((f) => !f.dismissed);
+  const allLive = S.deck.slides.flatMap((s) => liveOn(s));
+  const allActive = allLive.filter((f) => !f.dismissed);
   const blockingCount = allActive.filter((f) => f.severity !== "note").length;
 
   // Titlebar badge
@@ -364,57 +468,67 @@ export function paintFindings(goTo) {
   box.replaceChildren();
 
   if (filterMode === "current") {
-    if (curFindings.length > 0) {
+    // Four answers, and the pane has to give the right one. An empty findings
+    // list used to mean "clean", "never looked" and "looked, at words you have
+    // since replaced" all at once, which is how slide 1's verdict ended up
+    // standing in for slide 2's.
+    if (state === "empty") {
+      box.append(emptyState({
+        icon: "pencil-simple",
+        title: `Slide ${S.idx + 1} is blank`,
+        desc: "Write something and the critic reads it as you go.",
+      }));
+    } else if (curFindings.length) {
       const list = document.createElement("div");
       list.className = "findings-slide-list";
-      for (const f of curFindings) {
-        list.append(card(f, S.idx, goTo));
-      }
+      if (state !== "current") list.append(recheckBanner(state, S.idx));
+      for (const f of curFindings) list.append(card(f, S.idx, goTo));
       box.append(list);
-    } else {
-      const empty = document.createElement("div");
-      empty.className = "critique-empty clean";
-      empty.innerHTML = `
-        <div class="empty-icon">${iconSvg("shield-check", 22)}</div>
-        <div class="empty-title">This slide is clean</div>
-        <p class="empty-desc">No factual conflicts or unexplained jargon detected on slide ${S.idx + 1}.</p>
-      `;
+    } else if (state === "current") {
+      const empty = emptyState({
+        icon: "shield-check",
+        title: "This slide is clean",
+        desc: `No factual conflicts or unexplained jargon on slide ${S.idx + 1}.`,
+        clean: true,
+      });
       if (allActive.length > 0) {
         const switchBtn = document.createElement("button");
         switchBtn.type = "button";
         switchBtn.className = "empty-switch-btn";
         switchBtn.textContent = `View ${allActive.length} issue${allActive.length > 1 ? "s" : ""} on other slides`;
-        switchBtn.onclick = () => {
-          filterMode = "all";
-          paintFindings(goTo);
-        };
+        switchBtn.onclick = () => { filterMode = "all"; paintFindings(goTo); };
         empty.append(switchBtn);
       }
       box.append(empty);
+    } else {
+      box.append(emptyState({
+        icon: "eye",
+        title: `Reading slide ${S.idx + 1}`,
+        desc: "Checking what is written here against your source bin.",
+        working: true,
+      }));
     }
+    ensureReviewed();
     return;
   }
 
   // filterMode === "all"
   const groups = S.deck.slides
-    .map((s, i) => ({ i, id: s.id, findings: S.critiques.findings[s.id] ?? [] }))
+    .map((s, i) => ({ i, id: s.id, findings: liveOn(s) }))
     .filter((g) => g.findings.length)
     .sort((a, b) => (b.i === S.idx) - (a.i === S.idx) || a.i - b.i);
 
   if (!groups.length) {
-    const empty = document.createElement("div");
-    const hasAnyChecked = Object.keys(S.critiques.findings ?? {}).length > 0;
-    empty.className = "critique-empty" + (hasAnyChecked ? " clean" : "");
-    empty.innerHTML = `
-      <div class="empty-icon">${iconSvg(hasAnyChecked ? "check-circle" : "pencil-simple", 22)}</div>
-      <div class="empty-title">${hasAnyChecked ? "All slides clear" : "Editorial review"}</div>
-      <p class="empty-desc">${
-        hasAnyChecked
-          ? "Every claim satisfies Feynman clarity rules. Ready to export."
-          : "Claims are verified against source material and ungrounded jargon is flagged as you write."
-      }</p>
-    `;
-    box.append(empty);
+    const hasAnyChecked = Object.keys(S.critiques.reviewed ?? {}).length > 0;
+    box.append(emptyState({
+      icon: hasAnyChecked ? "check-circle" : "pencil-simple",
+      title: hasAnyChecked ? "All slides clear" : "Editorial review",
+      desc: hasAnyChecked
+        ? "Every claim satisfies Feynman clarity rules. Ready to export."
+        : "Claims are verified against source material and ungrounded jargon is flagged as you write.",
+      clean: hasAnyChecked,
+    }));
+    ensureReviewed();
     return;
   }
 
@@ -431,9 +545,12 @@ export function paintFindings(goTo) {
     h.onclick = () => goTo(g.i);
     sec.append(h);
 
-    for (const f of g.findings) {
-      sec.append(card(f, g.i, goTo));
-    }
+    const st = standing(S.deck.slides[g.i]);
+    if (st !== "current" && st !== "empty") sec.append(recheckBanner(st, g.i));
+
+    for (const f of g.findings) sec.append(card(f, g.i, goTo));
     box.append(sec);
   }
+
+  ensureReviewed();
 }
