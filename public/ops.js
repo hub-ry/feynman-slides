@@ -70,6 +70,20 @@ export function moveSlide(from, to) {
   });
 }
 
+/** Insert a new slide at a specific rail index. */
+export function insertSlideAt(index, layoutId = S.lastLayout) {
+  const t = template();
+  const layout = t.layouts.find((l) => l.id === layoutId) ?? t.layouts[0];
+  S.lastLayout = layout.id;
+  edit(() => {
+    S.deck.slides.splice(index, 0, { id: uid(), layout: layout.id, els: instantiate(layout, uid) });
+    S.idx = index;
+    deselect();
+  });
+  const first = els().find((e) => e.type === "text");
+  if (first) startEdit(first.id);
+}
+
 /**
  * Re-lay this slide out with another layout.
  *

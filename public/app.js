@@ -460,6 +460,7 @@ async function load(next) {
   S.deck.sources ??= [];
   S.critiques = r.state;
   S.blocking = r.blocking;
+  S.criticMode = r.criticMode ?? "auto";
   S.idx = 0;
   S.editing = null;
   deselect();
@@ -506,6 +507,101 @@ function makeFolderDropTarget(target, folderName) {
   });
 }
 
+let activeDeckMenu = null;
+
+function closeDeckMenu() {
+  if (activeDeckMenu) {
+    activeDeckMenu.remove();
+    activeDeckMenu = null;
+  }
+}
+
+document.addEventListener("click", closeDeckMenu);
+
+function openDeckCardMenu(e, d, onUpdate) {
+  e.preventDefault();
+  e.stopPropagation();
+  closeDeckMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "card-dropdown-menu";
+  const x = Math.min(e.clientX, window.innerWidth - 210);
+  const y = Math.min(e.clientY, window.innerHeight - 250);
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  const items = [
+    {
+      label: "Study (Anki mode)",
+      icon: "🧠",
+      action: () => {
+        location.hash = `#/present/${d.slug}`;
+      },
+    },
+    {
+      label: "Duplicate deck",
+      icon: "📋",
+      action: async () => {
+        const res = await fetch(`/api/deck/${d.slug}/duplicate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (res.ok) {
+          say("Deck duplicated");
+          await onUpdate();
+        }
+      },
+    },
+    {
+      label: "Rename deck",
+      icon: "✏️",
+      action: () => {
+        const next = prompt("New deck title:", d.title);
+        if (next && next.trim() && next.trim() !== d.title) {
+          fetch(`/api/deck/${d.slug}/rename`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: next.trim() }),
+          }).then(() => onUpdate());
+        }
+      },
+    },
+    {
+      label: "Move to folder",
+      icon: "📁",
+      action: () => {
+        openMoveDialog(d.slug, d.title, d.folder, onUpdate);
+      },
+    },
+    {
+      label: "Delete deck",
+      icon: "🗑️",
+      danger: true,
+      action: () => {
+        if (confirm(`Delete "${d.title}"? This cannot be undone.`)) {
+          fetch(`/api/deck/${d.slug}/delete`, { method: "POST" }).then(() => onUpdate());
+        }
+      },
+    },
+  ];
+
+  for (const item of items) {
+    const btn = document.createElement("button");
+    btn.className = "card-menu-item" + (item.danger ? " danger" : "");
+    btn.innerHTML = `<span class="icon">${item.icon}</span> <span>${item.label}</span>`;
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      closeDeckMenu();
+      item.action();
+    };
+    menu.append(btn);
+  }
+
+  document.body.append(menu);
+  activeDeckMenu = menu;
+}
+
 function createDeckCard(d) {
   const card = document.createElement("a");
   card.className = "card";
@@ -524,19 +620,19 @@ function createDeckCard(d) {
 
   const menuBtn = document.createElement("button");
   menuBtn.className = "card-menu-btn";
-  menuBtn.title = "Move to folder";
-  menuBtn.setAttribute("aria-label", `Move ${d.title}`);
+  menuBtn.title = "Deck actions";
+  menuBtn.setAttribute("aria-label", `Actions for ${d.title}`);
   menuBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>`;
   menuBtn.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    openMoveDialog(d.slug, d.title, d.folder, () => router());
+    openDeckCardMenu(e, d, () => router());
   };
   card.append(menuBtn);
 
   card.oncontextmenu = (e) => {
     e.preventDefault();
-    openMoveDialog(d.slug, d.title, d.folder, () => router());
+    openDeckCardMenu(e, d, () => router());
   };
 
   const shot = document.createElement("div");
@@ -546,6 +642,18 @@ function createDeckCard(d) {
     width: 260,
     srcFor: (e) => `/api/deck/${d.slug}/images/${encodeURIComponent(e.src)}`,
   }));
+
+  const studyOverlay = document.createElement("button");
+  studyOverlay.className = "card-study-overlay";
+  studyOverlay.title = "Study in Anki active-recall mode";
+  studyOverlay.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg> Study`;
+  studyOverlay.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    location.hash = `#/present/${d.slug}`;
+  };
+  shot.append(studyOverlay);
+
   card.append(shot);
 
   const titleDiv = Object.assign(document.createElement("div"), { className: "card-title" });

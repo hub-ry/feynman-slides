@@ -41,9 +41,10 @@ export function connect() {
     emit("status");
   });
   stream.addEventListener("findings", (e) => {
-    const { slideKey, findings, blocking } = JSON.parse(e.data);
+    const { slideKey, findings, blocking, criticMode } = JSON.parse(e.data);
     S.critiques.findings[slideKey] = findings;
     S.blocking = blocking;
+    if (criticMode) S.criticMode = criticMode;
     emit("findings");
     emit("gate");
   });
@@ -136,6 +137,35 @@ function card(f) {
 export function paintFindings(goTo) {
   const box = $("findings");
   box.replaceChildren();
+
+  const modeBar = document.createElement("div");
+  modeBar.className = "critic-mode-bar";
+  const isHeuristic = (S.criticMode ?? "heuristic") === "heuristic";
+  modeBar.innerHTML = `
+    <span class="critic-mode-pill ${isHeuristic ? "heuristic" : "claude"}">
+      <span class="dot"></span>
+      ${isHeuristic ? "Local Critic (Active)" : "Claude AI"}
+    </span>
+    <button class="critic-mode-toggle" title="Switch critic mode">
+      ${isHeuristic ? "Try Claude" : "Use Local"}
+    </button>
+  `;
+  const toggleBtn = modeBar.querySelector(".critic-mode-toggle");
+  if (toggleBtn) {
+    toggleBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const next = isHeuristic ? "claude" : "heuristic";
+      S.criticMode = next;
+      await fetch("/api/critic/mode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: next, slug: S.slug }),
+      });
+      firmReview();
+    };
+  }
+  box.append(modeBar);
+
   const groups = S.deck.slides
     .map((s, i) => ({ i, id: s.id, findings: S.critiques.findings[s.id] ?? [] }))
     .filter((g) => g.findings.length)

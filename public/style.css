@@ -771,3 +771,121 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 }
 #presenter .pbar-grade-btn.tricky { background: #dc2626; color: #fff; }
 #presenter .pbar-grade-btn.good { background: #059669; color: #fff; }
+
+/* --- card study overlay & dropdown menu ----------------------------------- */
+.card .shot { position: relative; }
+.card-study-overlay {
+  position: absolute; bottom: 8px; right: 8px; z-index: 5;
+  display: flex; align-items: center; gap: .35rem;
+  background: rgba(18, 20, 24, 0.85); backdrop-filter: blur(8px);
+  color: #fff; font-size: 11.5px; font-weight: 600;
+  padding: .28rem .65rem; border-radius: 100px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  opacity: 0; transform: translateY(4px);
+  transition: all .15s ease; cursor: pointer;
+}
+.card:hover .card-study-overlay {
+  opacity: 1; transform: translateY(0);
+}
+.card-study-overlay:hover {
+  background: #2563eb; border-color: #3b82f6; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+
+.card-dropdown-menu, .rail-context-menu {
+  position: fixed; z-index: 300; min-width: 180px;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); padding: .35rem;
+  display: flex; flex-direction: column; gap: 2px;
+  animation: popIn .1s ease-out;
+}
+.card-menu-item, .rail-menu-item {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: .45rem .65rem; border-radius: 6px;
+  font-size: 12.5px; font-weight: 500; color: var(--ink);
+  background: transparent; border: 0; text-align: left; cursor: pointer;
+  transition: background .08s ease;
+}
+.card-menu-item:hover, .rail-menu-item:hover {
+  background: var(--hover); color: var(--ink);
+}
+.card-menu-item.danger, .rail-menu-item.danger {
+  color: var(--error);
+}
+.card-menu-item.danger:hover, .rail-menu-item.danger:hover {
+  background: color-mix(in srgb, var(--error) 12%, var(--panel)); color: var(--error);
+}
+.rail-menu-item kbd {
+  font-size: 10.5px; font-family: var(--mono); color: var(--faint);
+  background: var(--bg); padding: .1rem .35rem; border-radius: 4px; border: 1px solid var(--rule);
+}
+
+/* --- rail between-slide inserter & thumb actions ------------------------- */
+.rail-insert-slot {
+  position: relative; height: 10px; margin: -5px 0 -5px 1.45rem;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10;
+}
+.rail-insert-btn {
+  opacity: 0; transform: scale(0.7);
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--sel); color: #fff; border: 0;
+  font-size: 13px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: all .12s ease;
+}
+.rail-insert-slot:hover .rail-insert-btn {
+  opacity: 1; transform: scale(1);
+}
+.rail-insert-slot::before {
+  content: ""; position: absolute; left: 0; right: 0; height: 1px;
+  background: var(--sel); opacity: 0; transition: opacity .12s ease;
+  pointer-events: none;
+}
+.rail-insert-slot:hover::before {
+  opacity: 0.7;
+}
+
+.thumb-actions {
+  position: absolute; top: 2px; right: 2px; display: flex; gap: 2px; z-index: 5;
+}
+.thumb-actions .more, .thumb-actions .kill {
+  width: 18px; height: 18px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 4px; font-size: 13px; line-height: 1; opacity: 0;
+  background: var(--panel); color: var(--dim); border: 1px solid var(--rule);
+  cursor: pointer; transition: opacity .1s ease, color .1s ease;
+}
+.thumb:hover .thumb-actions .more, .thumb:hover .thumb-actions .kill {
+  opacity: 1;
+}
+.thumb-actions .more:hover { color: var(--ink); background: var(--hover); border-color: var(--dim); }
+.thumb-actions .kill:hover { color: var(--error); border-color: var(--error); }
+
+/* --- critic mode bar in findings pane ----------------------------------- */
+.critic-mode-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .45rem .65rem; margin-bottom: .75rem;
+  background: var(--bg); border: 1px solid var(--rule); border-radius: 8px;
+  font-size: 12px;
+}
+.critic-mode-pill {
+  display: flex; align-items: center; gap: .45rem; font-weight: 550; color: var(--dim);
+}
+.critic-mode-pill .dot {
+  width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+}
+.critic-mode-pill.heuristic .dot {
+  background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+.critic-mode-pill.claude .dot {
+  background: #3b82f6; box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+}
+.critic-mode-toggle {
+  font-size: 11px; font-weight: 550; padding: .2rem .55rem; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--rule); color: var(--dim);
+  cursor: pointer; transition: all .1s ease;
+}
+.critic-mode-toggle:hover {
+  background: var(--hover); color: var(--ink); border-color: var(--dim);
+}
