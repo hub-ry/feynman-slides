@@ -85,33 +85,193 @@ const SEVERITY = z.enum(["error", "jargon", "note"]);
 
 type Pending = { deliver: ((text: string) => void) | null };
 
+export type CriticMode = "auto" | "claude" | "heuristic";
+
 export type CriticSession = {
   /** Critique one slide against the deck's source bin. Resolves with that slide's findings. */
   review(slide: Slide, sources: Source[], firm: boolean): Promise<Finding[]>;
   /** Tell the critic a finding was rejected, so it never raises it again. */
   dismissed(finding: Finding, reason: string): void;
   close(): void;
+  mode(): "claude" | "heuristic";
+  setMode(mode: CriticMode): void;
 };
+
+// Patterns where technical terms are substituted for an actual explanation
+const JARGON_PATTERNS: Array<{ regex: RegExp; term: string }> = [
+  { regex: /(?:uses?|using|via|with|through|leverages?|employs?|relies on)\s+(?:an?|the)?\s*(B-?tree|hash\s*(?:table|map|function)|scheduler|consensus|raft|paxos|CRDT|vector\s*clock|blockchain|neural\s*network|AI|machine\s*learning|deep\s*learning|heuristics?|dynamic\s*programming|memoization|garbage\s*collect(?:ion|or)|microservices?|kubernetes|quantum|bloom\s*filter|lsm\s*tree|trie|red-black\s*tree)/i, term: "$1" },
+  { regex: /\b(B-?tree|hash\s*(?:table|map)|raft|paxos|CRDT|bloom\s*filter|scheduler|garbage\s*collector|LSM\s*tree)\b/i, term: "$1" },
+  { regex: /(?:it(?:'s|\s+is)?\s+)?O\([a-z0-9\s^+-]+\)\s+because\s+(?:it(?:'s|\s+is)?\s+)?([a-z0-9\s-]+)/i, term: "O(...) because ..." },
+  { regex: /(?:because|since|as)\s+(?:it(?:'s|\s+is)?\s+)?(balanced|distributed|asynchronous|decentralized|atomic|idempotent|stateless|fault-tolerant)\b/i, term: "$1" },
+  { regex: /(?:handled|managed|solved|fixed|done|processed)\s+(?:by|in)\s+(?:the\s+)?([a-z0-9_-]+)/i, term: "$1" },
+];
+
+const ABSOLUTE_CLAIMS = [
+  /\b(100%\s+uptime|100%\s+reliable|100%\s+secure|zero\s+latency|zero-latency|zero\s+overhead|completely\s+bug-free|impossible\s+to\s+fail|guaranteed\s+never\s+fails?|zero\s+downtime|unbreakable|infinite\s+scalability|infinitely\s+scalable)\b/i,
+  /\bnever\s+fails?\b/i,
+  /\bzero\s+(?:latency|bugs?|errors?|downtime|cost|overhead)\b/i,
+  /\bperfect\s+(?:consistency|security|accuracy)\b/i,
+];
+
+const CONTRADICTION_PAIRS = [
+  { slide: /\bsingle-threaded\b/i, source: /\bmulti-threaded|\bmultiple\s+threads\b/i, label: "single-threaded vs multi-threaded" },
+  { slide: /\bmulti-threaded|\bmultiple\s+threads\b/i, source: /\bsingle-threaded\b/i, label: "multi-threaded vs single-threaded" },
+  { slide: /\bsynchronous\b/i, source: /\basynchronous\b/i, label: "synchronous vs asynchronous" },
+  { slide: /\bstrong\s+consistency\b/i, source: /\beventual\s+consistency\b/i, label: "strong vs eventual consistency" },
+  { slide: /\bmutable\b/i, source: /\bimmutable\b/i, label: "mutable vs immutable" },
+  { slide: /\bO\(n\^2\)\b/i, source: /\bO\(n\s*log\s*n\)\b/i, label: "O(n^2) vs O(n log n)" },
+];
+
+/**
+ * Intelligent local heuristic Feynman critic.
+ * Runs instantly offline or when Claude is unavailable.
+ */
+export function heuristicReview(
+  slide: Slide,
+  sources: Source[],
+  firm: boolean,
+  dismissedQuotes: Set<string> = new Set(),
+  slideKeyStr: string = "",
+  seqStart: number = 0,
+): Finding[] {
+  const findings: Finding[] = [];
+  let seq = seqStart;
+
+  const { title, body } = readable(slide);
+  const allLines = [title, ...body].map((s) => s.trim()).filter(Boolean);
+  if (!allLines.length) return findings;
+
+  const totalWords = allLines.reduce((acc, l) => acc + l.split(/\s+/).length, 0);
+  const sourcesText = sources.map((s) => s.text).join("\n").toLowerCase();
+
+  const isDismissed = (quote: string) => {
+    const q = quote.toLowerCase().trim();
+    for (const d of dismissedQuotes) {
+      if (d === q || q.includes(d) || d.includes(q)) return true;
+    }
+    return false;
+  };
+
+  // 1. Check overstuffed slide / cognitive overload (note)
+  if (body.length >= 6) {
+    const quote = body[body.length - 1] ?? title ?? "Slide content";
+    if (!isDismissed(quote)) {
+      findings.push({
+        id: `f${++seq}`,
+        severity: "note",
+        quote,
+        problem: `Slide holds too many distinct points (${body.length} items). Feynman slides work best when a single slide teaches one crisp idea.`,
+        fix_hint: "Split this slide: place the main premise here, and move secondary points to a follow-up slide.",
+        basis: "knowledge",
+        slideKey: slideKeyStr,
+      });
+    }
+  } else if (totalWords > 85) {
+    const quote = title || body[0] || "Slide content";
+    if (!isDismissed(quote)) {
+      findings.push({
+        id: `f${++seq}`,
+        severity: "note",
+        quote,
+        problem: `Slide is crowded (~${totalWords} words). A slide that looks like a wall of text is difficult to review during active recall.`,
+        fix_hint: "Trim explanations down to their essential phrases.",
+        basis: "knowledge",
+        slideKey: slideKeyStr,
+      });
+    }
+  }
+
+  // 2. Line-by-line checks
+  for (const line of allLines) {
+    if (isDismissed(line)) continue;
+
+    // Skip half-typed bullets during typing pause
+    if (!firm && (line.length < 18 || /\b(and|the|with|in|to|for|or|of|by)$/i.test(line))) {
+      continue;
+    }
+
+    // Absolute claims (error)
+    let foundAbsolute = false;
+    for (const pat of ABSOLUTE_CLAIMS) {
+      const match = pat.exec(line);
+      if (match) {
+        foundAbsolute = true;
+        findings.push({
+          id: `f${++seq}`,
+          severity: "error",
+          quote: line,
+          problem: `Makes an absolute claim ("${match[0]}"). In distributed systems, computing, and physics, zero latency or 100% reliability are physically impossible.`,
+          fix_hint: "State the constraint or trade-off: what failure mode occurs under peak load or network partition?",
+          basis: "knowledge",
+          slideKey: slideKeyStr,
+        });
+        break;
+      }
+    }
+    if (foundAbsolute) continue;
+
+    // Source contradiction (error)
+    if (sourcesText) {
+      let foundContradiction = false;
+      for (const pair of CONTRADICTION_PAIRS) {
+        if (pair.slide.test(line) && pair.source.test(sourcesText)) {
+          foundContradiction = true;
+          findings.push({
+            id: `f${++seq}`,
+            severity: "error",
+            quote: line,
+            problem: `Contradicts the source material in the bin (${pair.label}).`,
+            fix_hint: "Check the source bin: verify how this mechanism or property is defined in the source notes.",
+            basis: "source",
+            slideKey: slideKeyStr,
+          });
+          break;
+        }
+      }
+      if (foundContradiction) continue;
+    }
+
+    // Feynman Jargon test (jargon)
+    for (const pat of JARGON_PATTERNS) {
+      const match = pat.regex.exec(line);
+      if (match) {
+        const term = match[1] || match[0];
+        // Only trigger if line does not already explain the mechanism (short sentence naming the term)
+        if (line.split(/\s+/).length < 16 || /(?:uses?|using|via|with|through|handled by|managed by|because)\s+/i.test(line)) {
+          findings.push({
+            id: `f${++seq}`,
+            severity: "jargon",
+            quote: line,
+            problem: `Names "${term}" in place of an explanation. Deleting this term would remove the only explanation on the slide. Naming is not understanding.`,
+            fix_hint: "Explain the mechanism in plain terms: what data moves, how is it organized, or what steps occur without using the label?",
+            basis: sources.length ? "source" : "knowledge",
+            slideKey: slideKeyStr,
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  return findings;
+}
 
 /** One session per deck. Started lazily, because starting one costs a subprocess. */
 export function startCritic(deckTitle: string): CriticSession {
   const pending: Pending = { deliver: null };
   let closed = false;
-  // A holder, not a bare `let`: it is written in one closure and read in
-  // another, which control-flow narrowing cannot follow.
   const inflight: { resolve: ((findings: Finding[]) => void) | null } = { resolve: null };
   let collected: Finding[] = [];
   let currentKey = "";
   let seq = 0;
   const rejections: string[] = [];
+  const dismissedQuotes = new Set<string>();
   let chain: Promise<void> = Promise.resolve();
   let sentBin = "\u0000"; // never equal to a real bin, so the first review always sends one
 
-  // Every turn yielded here is exactly one review, and every review ends in
-  // exactly one `result`. That one-to-one is load-bearing: an extra turn - an
-  // init handshake, an acknowledged dismissal - produces an extra `result`
-  // that resolves the NEXT review with an empty list. That bug cost a slide
-  // with three faults in it a clean pass on the very first live run.
+  let criticConfig: CriticMode = (process.env.FEYNMAN_CRITIC as CriticMode) || "auto";
+  let activeMode: "claude" | "heuristic" = criticConfig === "heuristic" ? "heuristic" : "claude";
+
   async function* turns(): AsyncGenerator<any> {
     for (;;) {
       const next = await new Promise<string>((res) => (pending.deliver = res));
@@ -152,41 +312,82 @@ export function startCritic(deckTitle: string): CriticSession {
     ],
   });
 
-  const session = query({
-    prompt: turns(),
-    options: {
-      systemPrompt: {
-        type: "preset",
-        preset: "claude_code",
-        append: `${CONTRACT}\n\nThe deck they are writing is titled: ${deckTitle}`,
-      },
-      mcpServers: { critic: tools },
-      // The critic reads slides and reports. It has no reason to touch a file,
-      // so it is not given the ability to.
-      allowedTools: ["mcp__critic__report"],
-    },
-  });
+  let currentSlide: Slide | null = null;
+  let currentSources: Source[] = [];
+  let currentFirm = false;
 
-  // Drain the session forever: each `result` message closes out one review.
-  (async () => {
+  let session: any = null;
+  if (criticConfig !== "heuristic") {
     try {
-      for await (const msg of session as AsyncIterable<any>) {
-        if (msg.type === "result") {
-          const done = inflight.resolve;
-          inflight.resolve = null;
-          done?.(collected);
-          collected = [];
+      session = query({
+        prompt: turns(),
+        options: {
+          systemPrompt: {
+            type: "preset",
+            preset: "claude_code",
+            append: `${CONTRACT}\n\nThe deck they are writing is titled: ${deckTitle}`,
+          },
+          mcpServers: { critic: tools },
+          allowedTools: ["mcp__critic__report"],
+        },
+      });
+
+      (async () => {
+        try {
+          for await (const msg of session as AsyncIterable<any>) {
+            if (msg.type === "result") {
+              const done = inflight.resolve;
+              inflight.resolve = null;
+              if (msg.is_error) {
+                console.warn("[critic] Claude returned error result, falling back to heuristic critic:", msg.result || msg.terminal_reason);
+                activeMode = "heuristic";
+                if (currentSlide) {
+                  collected = heuristicReview(currentSlide, currentSources, currentFirm, dismissedQuotes, currentKey, seq);
+                  seq += collected.length;
+                }
+              }
+              done?.(collected);
+              collected = [];
+            }
+          }
+        } catch (err) {
+          if (!closed) {
+            console.warn("[critic] Claude session unavailable, switching to local heuristic critic:", (err as Error)?.message || err);
+          }
+          activeMode = "heuristic";
+          if (inflight.resolve) {
+            const done = inflight.resolve;
+            inflight.resolve = null;
+            if (currentSlide) {
+              const findings = heuristicReview(currentSlide, currentSources, currentFirm, dismissedQuotes, currentKey, seq);
+              seq += findings.length;
+              done(findings);
+            } else {
+              done([]);
+            }
+          }
         }
-      }
+      })();
     } catch (err) {
-      if (!closed) console.error("[critic] session ended:", err);
-      inflight.resolve?.([]);
+      console.warn("[critic] Could not start Claude session, using local heuristic critic:", (err as Error)?.message || err);
+      activeMode = "heuristic";
     }
-  })();
+  }
 
   function reviewOne(slide: Slide, sources: Source[], firm: boolean): Promise<Finding[]> {
     if (closed) return Promise.resolve([]);
     currentKey = slideKey(slide);
+    currentSlide = slide;
+    currentSources = sources;
+    currentFirm = firm;
+
+    // If configured for heuristic or fallen back because Claude is unavailable/out
+    if (activeMode === "heuristic" || criticConfig === "heuristic") {
+      const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
+      seq += findings.length;
+      return Promise.resolve(findings);
+    }
+
     const bar = firm
       ? "They just left this slide, so it is as finished as it is going to get. Review it properly."
       : "They paused while typing in this slide. It is IN PROGRESS. Only speak up for something clearly wrong; an unfinished bullet is not a finding.";
@@ -202,21 +403,41 @@ export function startCritic(deckTitle: string): CriticSession {
     sentBin = now;
 
     return new Promise<Finding[]>((resolve) => {
-      inflight.resolve = resolve;
-      pending.deliver?.(
-        `${rejected}${bar}\n\n${render(slide)}\n\n${sources_}\n\nCall \`report\` now.`,
-      );
+      // Safety timeout: if Claude does not answer within 3500ms, seamlessly fall back to heuristic critic
+      const timer = setTimeout(() => {
+        if (inflight.resolve) {
+          console.warn("[critic] Claude timed out, activating local heuristic critic fallback");
+          activeMode = "heuristic";
+          const done = inflight.resolve;
+          inflight.resolve = null;
+          const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
+          seq += findings.length;
+          done(findings);
+        }
+      }, 3500);
+
+      inflight.resolve = (res) => {
+        clearTimeout(timer);
+        resolve(res);
+      };
+
+      try {
+        pending.deliver?.(
+          `${rejected}${bar}\n\n${render(slide)}\n\n${sources_}\n\nCall \`report\` now.`,
+        );
+      } catch {
+        clearTimeout(timer);
+        activeMode = "heuristic";
+        const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
+        seq += findings.length;
+        resolve(findings);
+      }
     });
   }
 
   return {
     review(slide, sources, firm) {
       if (closed) return Promise.resolve([]);
-      // Queued, because this is ONE conversation and a conversation is serial.
-      // Reviewing two slides at once overwrote the first review's resolver
-      // with the second's and silently dropped a slide's findings - the
-      // editor happily fires a pause on one slide and a blur on another
-      // milliseconds apart, so this is the normal case, not the edge case.
       const run = chain.then(() => reviewOne(slide, sources, firm));
       chain = run.then(
         () => undefined,
@@ -226,10 +447,7 @@ export function startCritic(deckTitle: string): CriticSession {
     },
     dismissed(finding, reason) {
       if (closed) return;
-      // Carried into the next review rather than sent as its own turn. A turn
-      // of its own would cost a `result` with no review behind it - see the
-      // note on `turns`. It is also persisted in state.json, so a rejection
-      // outlives this process even if no further review ever happens.
+      dismissedQuotes.add(finding.quote.toLowerCase().trim());
       rejections.push(
         `You said: [${finding.severity}] "${finding.quote}" - ${finding.problem}\n` +
           `They rejected it: ${reason}`,
@@ -238,6 +456,14 @@ export function startCritic(deckTitle: string): CriticSession {
     close() {
       closed = true;
       pending.deliver?.("");
+    },
+    mode() {
+      return activeMode;
+    },
+    setMode(mode: CriticMode) {
+      criticConfig = mode;
+      if (mode === "heuristic") activeMode = "heuristic";
+      else if (mode === "claude") activeMode = "claude";
     },
   };
 }

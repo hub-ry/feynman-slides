@@ -155,6 +155,31 @@ export function rename(slug: string, title: string): void {
   writeDeck(slug, deck);
 }
 
+/** Duplicate a deck, cloning its slides, sources, and images. */
+export function duplicateDeck(slug: string, newTitle?: string): string {
+  const original = readDeck(slug);
+  const title = newTitle?.trim() || `${original.title} (Copy)`;
+  let newSlug = slugify(title);
+  if (existsSync(deckPath(newSlug))) {
+    let n = 2;
+    while (existsSync(deckPath(`${newSlug}-${n}`))) n += 1;
+    newSlug = `${newSlug}-${n}`;
+  }
+  mkdirSync(dir(newSlug), { recursive: true });
+  const copyDeck = structuredClone(original);
+  copyDeck.title = title;
+  writeDeck(newSlug, copyDeck);
+  const origImg = imageDir(slug);
+  if (existsSync(origImg)) {
+    const newImg = imageDir(newSlug);
+    mkdirSync(newImg, { recursive: true });
+    for (const file of readdirSync(origImg)) {
+      writeFileSync(join(newImg, file), readFileSync(join(origImg, file)));
+    }
+  }
+  return newSlug;
+}
+
 export function readDeck(slug: string): Deck {
   const p = deckPath(slug);
   if (!existsSync(p)) return blankDeck(slug);

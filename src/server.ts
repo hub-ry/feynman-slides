@@ -75,6 +75,7 @@ async function review(slug: string, slideId: string, firm: boolean): Promise<voi
       slideKey: key,
       findings: state.findings[key] ?? [],
       blocking: store.blocking(state).length,
+      criticMode: d.critic.mode(),
     });
   } catch (err) {
     push(slug, "error", { message: String(err) });
@@ -266,6 +267,22 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
   }
 
+  if (req.method === "GET" && p === "/api/critic/mode") {
+    return json(res, 200, { mode: process.env.FEYNMAN_CRITIC || "auto" });
+  }
+
+  if (req.method === "POST" && p === "/api/critic/mode") {
+    const { mode, slug } = await body(req);
+    if (mode === "auto" || mode === "claude" || mode === "heuristic") {
+      process.env.FEYNMAN_CRITIC = mode;
+      if (slug && live.has(slug)) {
+        live.get(slug)?.critic.setMode(mode);
+      }
+      return json(res, 200, { ok: true, mode });
+    }
+    return json(res, 400, { error: "invalid critic mode" });
+  }
+
   const m = /^\/api\/deck\/([a-z0-9-]+)(?:\/([a-z]+))?(?:\/(.+))?$/.exec(p);
   if (!m) return void res.writeHead(404).end("not found");
   const slug = m[1]!;
@@ -278,7 +295,13 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (req.method === "GET" && !action) {
     const deck = store.readDeck(slug);
     const state = store.prune(deck, store.readState(slug));
-    return json(res, 200, { deck, state, blocking: store.blocking(state).length });
+    const d = open(slug, deck.title);
+    return json(res, 200, {
+      deck,
+      state,
+      blocking: store.blocking(state).length,
+      criticMode: d.critic.mode(),
+    });
   }
 
   if (req.method === "GET" && action === "events") {
@@ -299,6 +322,12 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!deck?.slides) return json(res, 400, { error: "not a deck" });
     store.writeDeck(slug, deck);
     return json(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && action === "duplicate") {
+    const { title } = await body(req);
+    const newSlug = store.duplicateDeck(slug, title ? String(title).trim() : undefined);
+    return json(res, 200, { ok: true, slug: newSlug });
   }
 
   if (req.method === "POST" && action === "rename") {
