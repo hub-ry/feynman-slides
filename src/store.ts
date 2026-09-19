@@ -19,6 +19,39 @@ import { type Deck, blankDeck, slideKey, migrate } from "./deck.ts";
 
 export const HOME = process.env.FEYNMAN_SLIDES_HOME ?? join(homedir(), ".feynman-slides");
 export const DECKS = join(HOME, "decks");
+export const STORAGE_CAP_GB = Math.max(1, Number(process.env.FEYNMAN_STORAGE_CAP_GB || "100"));
+export const STORAGE_CAP_BYTES = STORAGE_CAP_GB * 1024 * 1024 * 1024;
+
+/** Recursively measure total byte size of a directory on disk. */
+export function getDirSizeBytes(targetDir: string): number {
+  if (!existsSync(targetDir)) return 0;
+  let total = 0;
+  try {
+    const entries = readdirSync(targetDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = join(targetDir, entry.name);
+      if (entry.isDirectory()) {
+        total += getDirSizeBytes(fullPath);
+      } else if (entry.isFile()) {
+        try {
+          total += statSync(fullPath).size;
+        } catch {}
+      }
+    }
+  } catch {}
+  return total;
+}
+
+export function getTotalStorageBytes(): number {
+  return getDirSizeBytes(HOME);
+}
+
+export function assertStorageCapacity(additionalBytes = 0): void {
+  const current = getTotalStorageBytes();
+  if (current + additionalBytes > STORAGE_CAP_BYTES) {
+    throw new Error(`storage cap of ${STORAGE_CAP_GB}GB reached. Delete older decks or images to free space.`);
+  }
+}
 
 export type State = { findings: Record<string, Finding[]>; dismissed: Finding[] };
 const EMPTY: State = { findings: {}, dismissed: [] };
@@ -157,6 +190,7 @@ export function rename(slug: string, title: string): void {
 
 /** Duplicate a deck, cloning its slides, sources, and images. */
 export function duplicateDeck(slug: string, newTitle?: string): string {
+  assertStorageCapacity();
   const original = readDeck(slug);
   const title = newTitle?.trim() || `${original.title} (Copy)`;
   let newSlug = slugify(title);
@@ -187,6 +221,7 @@ export function readDeck(slug: string): Deck {
 }
 
 export function writeDeck(slug: string, deck: Deck): void {
+  assertStorageCapacity();
   mkdirSync(dir(slug), { recursive: true });
   // Written to a temp file and renamed, because the editor saves on every
   // drag: a crash mid-write must not be able to leave you with half a deck.
@@ -239,6 +274,7 @@ export function blocking(state: State): Finding[] {
 }
 
 export function saveImage(slug: string, name: string, bytes: Buffer): string {
+  assertStorageCapacity(bytes.length);
   mkdirSync(imageDir(slug), { recursive: true });
   writeFileSync(join(imageDir(slug), name), bytes);
   return name;

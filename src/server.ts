@@ -154,6 +154,17 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if ((isGet || isHead) && !p.startsWith("/api/"))
     return sendFile(res, join(PUBLIC, p.slice(1)), PUBLIC, isHead);
 
+  if (req.method === "GET" && p === "/api/storage") {
+    const usedBytes = store.getTotalStorageBytes();
+    return json(res, 200, {
+      usedBytes,
+      capBytes: store.STORAGE_CAP_BYTES,
+      capGb: store.STORAGE_CAP_GB,
+      usedMb: Math.round((usedBytes / (1024 * 1024)) * 100) / 100,
+      freeBytes: Math.max(0, store.STORAGE_CAP_BYTES - usedBytes),
+    });
+  }
+
   if (req.method === "GET" && p === "/api/decks") return json(res, 200, store.list());
   if (req.method === "POST" && p === "/api/decks") {
     const { title, template, folder } = await body(req);
