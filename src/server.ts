@@ -182,7 +182,11 @@ function sendFile(res: ServerResponse, path: string, root: string, isHead = fals
   res.writeHead(200, {
     "content-type": TYPES[extname(full).toLowerCase()] ?? "application/octet-stream",
     "content-length": bytes.length,
-    "cache-control": "no-cache, must-revalidate",
+    "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+    "cdn-cache-control": "no-store",
+    "cloudflare-cdn-cache-control": "no-store",
+    "pragma": "no-cache",
+    "expires": "0",
   });
   if (isHead) {
     res.end();
