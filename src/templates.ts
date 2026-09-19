@@ -72,7 +72,15 @@ export type CatalogEntry = {
   description: string;
   palette: Record<string, string>;
   url: string;
+  tags?: string[];
+  category?: string;
+  repo?: string;
   installed?: boolean;
+};
+
+export type CatalogFilter = {
+  tag?: string;
+  q?: string;
 };
 
 /**
@@ -82,20 +90,133 @@ export type CatalogEntry = {
  * Silently falling back to the bundled four while a fetch failed would be the
  * kind of lie that takes an afternoon to notice.
  */
-export async function catalog(): Promise<{ source: string; entries: CatalogEntry[]; error?: string }> {
+export async function catalog(filter?: CatalogFilter): Promise<{ source: string; entries: CatalogEntry[]; error?: string }> {
   const bundled = () => {
     const raw = readJson(join(SHIPPED, "registry.json")) as { templates?: CatalogEntry[] } | null;
     return raw?.templates ?? [];
   };
-  if (!REGISTRY) return { source: "bundled", entries: bundled() };
-  try {
-    const res = await fetch(REGISTRY, { signal: AbortSignal.timeout(6000) });
-    if (!res.ok) throw new Error(`registry returned ${res.status}`);
-    const raw = (await res.json()) as { templates?: CatalogEntry[] };
-    return { source: new URL(REGISTRY).host, entries: raw.templates ?? [] };
-  } catch (err) {
-    return { source: "bundled", entries: bundled(), error: String((err as Error).message ?? err) };
+  let source = "bundled";
+  let entries: CatalogEntry[] = [];
+  let error: string | undefined;
+  if (!REGISTRY) {
+    entries = bundled();
+  } else {
+    try {
+      const res = await fetch(REGISTRY, { signal: AbortSignal.timeout(6000) });
+      if (!res.ok) throw new Error(`registry returned ${res.status}`);
+      const raw = (await res.json()) as { templates?: CatalogEntry[] };
+      source = new URL(REGISTRY).host;
+      entries = raw.templates ?? [];
+    } catch (err) {
+      source = "bundled";
+      entries = bundled();
+      error = String((err as Error).message ?? err);
+    }
   }
+
+  if (filter?.tag) {
+    const t = filter.tag.toLowerCase();
+    entries = entries.filter((e) => e.tags?.some((x) => x.toLowerCase() === t));
+  }
+  if (filter?.q) {
+    const q = filter.q.toLowerCase();
+    entries = entries.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q) ||
+        e.tags?.some((x) => x.toLowerCase().includes(q)),
+    );
+  }
+
+  return { source, entries, ...(error ? { error } : {}) };
+}
+
+export type PublishOptions = {
+  tags?: string[];
+  category?: string;
+  author?: string;
+  description?: string;
+  version?: string;
+};
+
+/**
+ * Publish a user-created template to the community registry and catalog.
+ *
+ * Saves the template JSON into templates/community/<id>.json and updates
+ * templates/registry.json so it appears in the crowdsourced community catalog.
+ */
+export function publishToCommunity(
+  input: Record<string, unknown> | string,
+  opts: PublishOptions = {},
+): { entry: CatalogEntry; template: Template } {
+  const tpl = typeof input === "string" ? raw(input) : input;
+  if (!tpl) throw new Error("no template provided or template not found");
+  const bad = validate(tpl);
+  if (bad) throw new Error(`that file is not a template: ${bad}`);
+
+  const id = String(tpl.id);
+  const name = String(tpl.name ?? id);
+  const author = String(opts.author ?? tpl.author ?? "community").trim() || "community";
+  const version = String(opts.version ?? tpl.version ?? "1.0.0").trim() || "1.0.0";
+  const description = String(opts.description ?? tpl.description ?? "").trim();
+  const tags = Array.isArray(opts.tags)
+    ? opts.tags.map(String).map((s) => s.trim()).filter(Boolean)
+    : Array.isArray(tpl.tags)
+      ? (tpl.tags as unknown[]).map(String).map((s) => s.trim()).filter(Boolean)
+      : [];
+  const category = opts.category ? String(opts.category).trim() : undefined;
+
+  const communityDir = join(SHIPPED, "community");
+  mkdirSync(communityDir, { recursive: true });
+
+  const templateToSave = {
+    ...tpl,
+    id,
+    name,
+    author,
+    version,
+    description,
+    ...(tags.length ? { tags } : {}),
+  };
+  writeFileSync(join(communityDir, `${id}.json`), JSON.stringify(templateToSave, null, 2) + "\n");
+
+  const registryPath = join(SHIPPED, "registry.json");
+  let reg: { name: string; updated: string; templates: CatalogEntry[] } = {
+    name: "feynman-slides community templates",
+    updated: new Date().toISOString().slice(0, 10),
+    templates: [],
+  };
+  if (existsSync(registryPath)) {
+    const existing = readJson(registryPath) as typeof reg | null;
+    if (existing && Array.isArray(existing.templates)) {
+      reg = existing;
+    }
+  }
+
+  const entry: CatalogEntry = {
+    id,
+    name,
+    author,
+    version,
+    description,
+    palette: (tpl.palette as Record<string, string>) ?? {},
+    url: `/templates/community/${id}.json`,
+    ...(tags.length ? { tags } : {}),
+    ...(category ? { category } : {}),
+    repo: "community",
+  };
+
+  const idx = reg.templates.findIndex((e) => e.id === id);
+  if (idx >= 0) {
+    reg.templates[idx] = { ...reg.templates[idx], ...entry };
+  } else {
+    reg.templates.push(entry);
+  }
+  reg.updated = new Date().toISOString().slice(0, 10);
+  writeFileSync(registryPath, JSON.stringify(reg, null, 2) + "\n");
+
+  const normalized = normalize(templateToSave);
+  return { entry, template: normalized };
 }
 
 /** A catalogue url, which is either a file that shipped or something to fetch. */

@@ -194,12 +194,32 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return json(res, 200, { installed: templates.all(), dir: templates.DIR });
 
   if (req.method === "GET" && p === "/api/templates/catalog") {
-    const cat = await templates.catalog();
+    const tag = url.searchParams.get("tag") ?? undefined;
+    const q = url.searchParams.get("q") ?? undefined;
+    const cat = await templates.catalog({ tag, q });
     const have = new Set(templates.all().map((t) => t.id));
     return json(res, 200, {
       ...cat,
       entries: cat.entries.map((e) => ({ ...e, installed: have.has(e.id) })),
     });
+  }
+
+  if (req.method === "POST" && p === "/api/templates/community/publish") {
+    const payload = await body(req);
+    try {
+      const templateInput = payload.template ?? (payload.id && !payload.palette ? payload.id : payload);
+      if (!templateInput) return json(res, 400, { error: "no template or template id provided" });
+      const { entry, template } = templates.publishToCommunity(templateInput, {
+        tags: payload.tags,
+        category: payload.category,
+        author: payload.author,
+        description: payload.description,
+        version: payload.version,
+      });
+      return json(res, 200, { ok: true, entry, template });
+    } catch (err) {
+      return json(res, 400, { error: String((err as Error).message ?? err) });
+    }
   }
 
   if (req.method === "GET" && p.startsWith("/api/templates/raw/")) {
