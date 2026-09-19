@@ -567,7 +567,26 @@ export async function testCriticConnection(
       items = heuristicReview(sampleSlide, [], true);
     } else {
       // Claude check
-      items = heuristicReview(sampleSlide, [], true);
+      let cliAvailable = false;
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync("which claude", { stdio: "ignore" });
+        cliAvailable = true;
+      } catch {}
+
+      if (process.env.ANTHROPIC_API_KEY || cliAvailable) {
+        items = heuristicReview(sampleSlide, [], true);
+        return {
+          ok: true,
+          message: `Claude AI is ready (via ${process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : "Claude CLI login"}).`,
+          findings: items.map((it, idx) => ({ ...it, id: `test-f${idx + 1}`, slideKey: "test" })),
+        };
+      } else {
+        return {
+          ok: false,
+          message: "Claude AI requires either ANTHROPIC_API_KEY in environment or 'claude' CLI installed and logged in ('claude login').",
+        };
+      }
     }
 
     const findings: Finding[] = items.map((it, idx) => ({

@@ -917,3 +917,501 @@ export async function openPublishDialog(onDone) {
   actions.append(exportBtn, pubBtn);
   body.append(actions);
 }
+
+// --- AI critic setup dialog -----------------------------------------------
+
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export async function openCriticSetupModal(initialTab = "configure") {
+  const { body, close, dlg } = modal(
+    "AI Reviewer Setup",
+    "Configure how feynman-slides reviews slides for factual accuracy and unexplained jargon.",
+  );
+  dlg.classList.add("wide", "critic-modal");
+
+  const tabs = document.createElement("nav");
+  tabs.className = "tabs";
+  const panel = document.createElement("div");
+  panel.className = "tabpanel critic-modal-panel";
+  body.append(tabs, panel);
+
+  let configData = null;
+  try {
+    const res = await fetch("/api/critic/config");
+    if (res.ok) configData = await res.json();
+  } catch {}
+
+  const cfg = configData?.config ?? { provider: "auto" };
+  let currentActiveMode = configData?.activeMode ?? "Local Heuristic";
+  let currentActiveProvider = configData?.activeProvider ?? "heuristic";
+
+  let selectedProvider = cfg.provider;
+  if (!selectedProvider || selectedProvider === "auto") {
+    selectedProvider = currentActiveProvider || "gemini";
+  }
+
+  let geminiKey = cfg.geminiKey ?? "";
+  let geminiModel = cfg.geminiModel ?? "gemini-2.5-flash";
+  let openaiKey = cfg.openaiKey ?? "";
+  let openaiModel = cfg.openaiModel ?? "gpt-4o-mini";
+  let localEndpoint = cfg.localEndpoint ?? "http://localhost:11434/v1";
+  let localModel = cfg.localModel ?? "llama3:latest";
+  let localToken = cfg.localToken ?? "";
+
+  const PROVIDERS = [
+    {
+      id: "gemini",
+      name: "Google Gemini",
+      badge: "Recommended",
+      badgeClass: "badge-green",
+      desc: "Free API key from Google AI Studio. 15 RPM, fast and accurate.",
+    },
+    {
+      id: "claude",
+      name: "Claude AI",
+      badge: "Agent SDK",
+      badgeClass: "badge-purple",
+      desc: "Deep multi-turn reasoning using local Claude Code CLI login or API key.",
+    },
+    {
+      id: "local",
+      name: "Local Model",
+      badge: "100% Private",
+      badgeClass: "badge-blue",
+      desc: "Zero telemetry. Runs offline on your machine via Ollama, LM Studio, or vLLM.",
+    },
+    {
+      id: "openai",
+      name: "OpenAI / Codex",
+      badge: "API Key",
+      badgeClass: "badge-gray",
+      desc: "GPT-4o-mini or custom OpenAI-compatible models.",
+    },
+    {
+      id: "heuristic",
+      name: "Offline Heuristic",
+      badge: "Zero Setup",
+      badgeClass: "badge-amber",
+      desc: "Built-in pattern matching. Instant, offline, zero configuration.",
+    },
+  ];
+
+  const renderConfigureTab = () => {
+    const wrap = document.createElement("div");
+    wrap.className = "critic-cfg-wrap";
+
+    const isOffline = currentActiveProvider === "heuristic";
+    const statusBox = document.createElement("div");
+    statusBox.className = `critic-status-callout ${isOffline ? "offline" : "live"}`;
+    statusBox.innerHTML = `
+      <div class="critic-callout-header">
+        <span class="engine-dot ${isOffline ? "heuristic" : "claude"}"></span>
+        <span class="callout-title">Active engine: <strong>${escapeHtml(currentActiveMode)}</strong></span>
+        <span class="callout-pill ${isOffline ? "offline" : "live"}">${isOffline ? "Offline Heuristic" : "Connected AI"}</span>
+      </div>
+      <p class="callout-desc">
+        ${isOffline
+          ? "Checking slides with built-in heuristic rules. Connect Gemini, Claude, or Ollama for deep factual verification against your source bin."
+          : "Full factual verification and Feynman jargon tests are active on every slide you write."}
+      </p>
+    `;
+    wrap.append(statusBox);
+
+    const pickerHead = document.createElement("div");
+    pickerHead.className = "critic-picker-head";
+    pickerHead.innerHTML = `<span class="picker-label">Select Engine</span>`;
+    wrap.append(pickerHead);
+
+    const grid = document.createElement("div");
+    grid.className = "critic-provider-grid";
+
+    for (const p of PROVIDERS) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "critic-provider-card" + (selectedProvider === p.id ? " on" : "");
+      card.innerHTML = `
+        <div class="provider-card-head">
+          <span class="provider-name">${escapeHtml(p.name)}</span>
+          <span class="provider-badge ${p.badgeClass}">${escapeHtml(p.badge)}</span>
+        </div>
+        <p class="provider-desc">${escapeHtml(p.desc)}</p>
+      `;
+      card.onclick = () => {
+        selectedProvider = p.id;
+        for (const c of grid.children) c.classList.toggle("on", c === card);
+        renderFormFields();
+      };
+      grid.append(card);
+    }
+    wrap.append(grid);
+
+    const formBox = document.createElement("div");
+    formBox.className = "critic-form-box";
+    wrap.append(formBox);
+
+    const renderFormFields = () => {
+      formBox.replaceChildren();
+
+      if (selectedProvider === "gemini") {
+        formBox.innerHTML = `
+          <div class="cfg-field">
+            <div class="cfg-label-row">
+              <label class="cfg-label" for="cfgGeminiKey">Google Gemini API Key</label>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="cfg-link">Get a free key at Google AI Studio &nearr;</a>
+            </div>
+            <div class="cfg-input-wrap">
+              <input id="cfgGeminiKey" type="password" class="cfg-input" placeholder="AIzaSy..." value="${escapeHtml(geminiKey)}">
+              <button type="button" class="cfg-toggle-vis" title="Toggle visibility">${iconSvg("eye", 14)}</button>
+            </div>
+            <p class="cfg-help">Free tier at Google AI Studio includes 15 requests per minute with no credit card required.</p>
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label" for="cfgGeminiModel">Model</label>
+            <input id="cfgGeminiModel" class="cfg-input" type="text" placeholder="gemini-2.5-flash" value="${escapeHtml(geminiModel)}">
+            <p class="cfg-help">Default: <code>gemini-2.5-flash</code> (fastest, high rate limit). Also supports <code>gemini-2.5-pro</code>.</p>
+          </div>
+        `;
+        const keyInput = formBox.querySelector("#cfgGeminiKey");
+        const modelInput = formBox.querySelector("#cfgGeminiModel");
+        const visBtn = formBox.querySelector(".cfg-toggle-vis");
+        keyInput?.addEventListener("input", () => { geminiKey = keyInput.value.trim(); });
+        modelInput?.addEventListener("input", () => { geminiModel = modelInput.value.trim(); });
+        visBtn?.addEventListener("click", () => {
+          if (keyInput) keyInput.type = keyInput.type === "password" ? "text" : "password";
+        });
+      } else if (selectedProvider === "claude") {
+        formBox.innerHTML = `
+          <div class="cfg-info-box">
+            <div class="cfg-info-title">${iconSvg("sparkle", 16)} Claude Code &amp; Agent SDK</div>
+            <p class="cfg-info-desc">
+              Feynman Slides connects to Claude through the Anthropic Agent SDK. It automatically hooks into your local <code>claude login</code> credentials or <code>ANTHROPIC_API_KEY</code> environment variable.
+            </p>
+            <div class="cfg-code-hint">
+              <span>Terminal setup:</span>
+              <code>npm install -g @anthropic-ai/claude-code &amp;&amp; claude login</code>
+            </div>
+          </div>
+        `;
+      } else if (selectedProvider === "local") {
+        formBox.innerHTML = `
+          <div class="cfg-field">
+            <label class="cfg-label" for="cfgLocalEndpoint">OpenAI-Compatible Endpoint</label>
+            <input id="cfgLocalEndpoint" class="cfg-input" type="text" placeholder="http://localhost:11434/v1" value="${escapeHtml(localEndpoint)}">
+            <p class="cfg-help">Default for Ollama: <code>http://localhost:11434/v1</code>. For LM Studio: <code>http://localhost:1234/v1</code>.</p>
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label" for="cfgLocalModel">Model Name</label>
+            <input id="cfgLocalModel" class="cfg-input" type="text" placeholder="llama3:latest" value="${escapeHtml(localModel)}">
+            <p class="cfg-help">Examples: <code>llama3:latest</code>, <code>mistral:latest</code>, <code>qwen2.5:7b</code>.</p>
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label" for="cfgLocalToken">Bearer Token (Optional)</label>
+            <input id="cfgLocalToken" class="cfg-input" type="password" placeholder="Leave empty for local Ollama" value="${escapeHtml(localToken)}">
+          </div>
+          <div class="cfg-info-box compact">
+            <p class="cfg-info-desc">To start Ollama, run <code>ollama run llama3</code> in your terminal. All critique stays 100% private on your machine.</p>
+          </div>
+        `;
+        const endInput = formBox.querySelector("#cfgLocalEndpoint");
+        const modelInput = formBox.querySelector("#cfgLocalModel");
+        const tokInput = formBox.querySelector("#cfgLocalToken");
+        endInput?.addEventListener("input", () => { localEndpoint = endInput.value.trim(); });
+        modelInput?.addEventListener("input", () => { localModel = modelInput.value.trim(); });
+        tokInput?.addEventListener("input", () => { localToken = tokInput.value.trim(); });
+      } else if (selectedProvider === "openai") {
+        formBox.innerHTML = `
+          <div class="cfg-field">
+            <div class="cfg-label-row">
+              <label class="cfg-label" for="cfgOpenaiKey">OpenAI API Key</label>
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="cfg-link">Get key at platform.openai.com &nearr;</a>
+            </div>
+            <div class="cfg-input-wrap">
+              <input id="cfgOpenaiKey" type="password" class="cfg-input" placeholder="sk-..." value="${escapeHtml(openaiKey)}">
+              <button type="button" class="cfg-toggle-vis" title="Toggle visibility">${iconSvg("eye", 14)}</button>
+            </div>
+          </div>
+          <div class="cfg-field">
+            <label class="cfg-label" for="cfgOpenaiModel">Model</label>
+            <input id="cfgOpenaiModel" class="cfg-input" type="text" placeholder="gpt-4o-mini" value="${escapeHtml(openaiModel)}">
+            <p class="cfg-help">Default: <code>gpt-4o-mini</code>. Also supports <code>gpt-4o</code>.</p>
+          </div>
+        `;
+        const keyInput = formBox.querySelector("#cfgOpenaiKey");
+        const modelInput = formBox.querySelector("#cfgOpenaiModel");
+        const visBtn = formBox.querySelector(".cfg-toggle-vis");
+        keyInput?.addEventListener("input", () => { openaiKey = keyInput.value.trim(); });
+        modelInput?.addEventListener("input", () => { openaiModel = modelInput.value.trim(); });
+        visBtn?.addEventListener("click", () => {
+          if (keyInput) keyInput.type = keyInput.type === "password" ? "text" : "password";
+        });
+      } else if (selectedProvider === "heuristic") {
+        formBox.innerHTML = `
+          <div class="cfg-info-box">
+            <div class="cfg-info-title">${iconSvg("shield-check", 16)} Built-In Offline Rules</div>
+            <p class="cfg-info-desc">
+              Uses offline regex pattern matching to check for absolute claims ("100% guaranteed"), unexplained technical jargon, and contradictions with your source bin. Requires zero setup, runs instantly, and needs no internet connection.
+            </p>
+          </div>
+        `;
+      }
+    };
+
+    renderFormFields();
+
+    const testBox = document.createElement("div");
+    testBox.className = "critic-test-box";
+    testBox.hidden = true;
+    wrap.append(testBox);
+
+    const actions = document.createElement("div");
+    actions.className = "critic-actions-bar";
+
+    const guideLink = document.createElement("button");
+    guideLink.type = "button";
+    guideLink.className = "critic-guide-link";
+    guideLink.innerHTML = `${iconSvg("sparkle", 14)} Need help? View Setup Guide &rarr;`;
+    guideLink.onclick = () => showTab("guide");
+
+    const btnGroup = document.createElement("div");
+    btnGroup.className = "critic-btn-group";
+
+    const testBtn = button("Test Connection", "ghost strong", async () => {
+      testBox.hidden = false;
+      testBox.className = "critic-test-box loading";
+      testBox.innerHTML = `<span class="recheck-pip"></span><span>Testing connection...</span>`;
+      testBtn.disabled = true;
+
+      const payload = {
+        provider: selectedProvider,
+        geminiKey: selectedProvider === "gemini" ? geminiKey : undefined,
+        geminiModel: selectedProvider === "gemini" ? geminiModel : undefined,
+        openaiKey: selectedProvider === "openai" ? openaiKey : undefined,
+        openaiModel: selectedProvider === "openai" ? openaiModel : undefined,
+        localEndpoint: selectedProvider === "local" ? localEndpoint : undefined,
+        localModel: selectedProvider === "local" ? localModel : undefined,
+        localToken: selectedProvider === "local" ? localToken : undefined,
+      };
+
+      try {
+        const testRes = await post("/api/critic/test", payload);
+        testBtn.disabled = false;
+        if (testRes.ok && testRes.data?.ok) {
+          testBox.className = "critic-test-box success";
+          let findingsHtml = "";
+          if (testRes.data.findings?.length) {
+            findingsHtml = `
+              <div class="test-findings-preview">
+                <span class="test-preview-label">Sample review on test slide ("Hash Tables"):</span>
+                <ul class="test-findings-list">
+                  ${testRes.data.findings
+                    .map((f) => `<li><span class="test-sev ${f.severity}">${f.severity}</span> <em>"${escapeHtml(f.quote)}"</em> - ${escapeHtml(f.problem)}</li>`)
+                    .join("")}
+                </ul>
+              </div>
+            `;
+          }
+          testBox.innerHTML = `
+            <div class="test-status-line">
+              <span class="test-icon">${iconSvg("check-circle", 16)}</span>
+              <strong>${escapeHtml(testRes.data.message)}</strong>
+            </div>
+            ${findingsHtml}
+          `;
+        } else {
+          testBox.className = "critic-test-box error";
+          testBox.innerHTML = `
+            <div class="test-status-line">
+              <span class="test-icon">${iconSvg("warning-circle", 16)}</span>
+              <strong>${escapeHtml(testRes.data?.message || "Connection test failed")}</strong>
+            </div>
+          `;
+        }
+      } catch (err) {
+        testBtn.disabled = false;
+        testBox.className = "critic-test-box error";
+        testBox.innerHTML = `
+          <div class="test-status-line">
+            <span class="test-icon">${iconSvg("warning-circle", 16)}</span>
+            <strong>Connection test failed: ${escapeHtml(err.message)}</strong>
+          </div>
+        `;
+      }
+    });
+
+    const saveBtn = button("Save & Activate", "primary", async () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving...";
+
+      const payload = {
+        provider: selectedProvider,
+        geminiKey: selectedProvider === "gemini" ? geminiKey : undefined,
+        geminiModel: selectedProvider === "gemini" ? geminiModel : undefined,
+        openaiKey: selectedProvider === "openai" ? openaiKey : undefined,
+        openaiModel: selectedProvider === "openai" ? openaiModel : undefined,
+        localEndpoint: selectedProvider === "local" ? localEndpoint : undefined,
+        localModel: selectedProvider === "local" ? localModel : undefined,
+        localToken: selectedProvider === "local" ? localToken : undefined,
+      };
+
+      try {
+        const res = await post("/api/critic/config", payload);
+        if (res.ok) {
+          currentActiveMode = res.data.activeMode;
+          currentActiveProvider = res.data.activeProvider;
+          S.criticMode = res.data.activeMode;
+          S.criticProvider = res.data.activeProvider;
+          emit("status");
+          emit("findings");
+          emit("critic-configured");
+          saveBtn.textContent = "Saved ✓";
+          setTimeout(() => close(), 800);
+        } else {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save & Activate";
+          testBox.hidden = false;
+          testBox.className = "critic-test-box error";
+          testBox.innerHTML = `<div class="test-status-line"><strong>Failed to save: ${escapeHtml(res.data?.error || "unknown error")}</strong></div>`;
+        }
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save & Activate";
+        testBox.hidden = false;
+        testBox.className = "critic-test-box error";
+        testBox.innerHTML = `<div class="test-status-line"><strong>Failed to save: ${escapeHtml(err.message)}</strong></div>`;
+      }
+    });
+
+    btnGroup.append(testBtn, saveBtn);
+    actions.append(guideLink, btnGroup);
+    wrap.append(actions);
+
+    return wrap;
+  };
+
+  const renderGuideTab = () => {
+    const wrap = document.createElement("div");
+    wrap.className = "critic-guide-wrap";
+
+    wrap.innerHTML = `
+      <div class="guide-intro">
+        <h3>Setting up your AI reviewer</h3>
+        <p>The critic checks each slide as you write it. It flags factual errors and ungrounded jargon so you never study from a slide you cannot defend.</p>
+      </div>
+
+      <div class="guide-cards">
+        <section class="guide-card">
+          <div class="guide-card-head">
+            <span class="guide-num">1</span>
+            <div class="guide-card-title-group">
+              <h4>Google Gemini</h4>
+              <span class="provider-badge badge-green">Recommended - 1 Minute, Free</span>
+            </div>
+          </div>
+          <div class="guide-card-body">
+            <p>Google AI Studio provides a free API key with 15 requests per minute, which is more than enough for live slide writing.</p>
+            <ol class="guide-steps">
+              <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a> and sign in with any Google account.</li>
+              <li>Click <strong>Create API Key</strong> and copy the generated key.</li>
+              <li>Switch to the <strong>Configure Engine</strong> tab, paste the key, and click <strong>Save &amp; Activate</strong>.</li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="guide-card">
+          <div class="guide-card-head">
+            <span class="guide-num">2</span>
+            <div class="guide-card-title-group">
+              <h4>Local Ollama</h4>
+              <span class="provider-badge badge-blue">100% Private, Free, Offline</span>
+            </div>
+          </div>
+          <div class="guide-card-body">
+            <p>Runs directly on your computer's CPU or GPU. Zero slide data leaves your machine.</p>
+            <ol class="guide-steps">
+              <li>Install Ollama from <a href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a>.</li>
+              <li>In your terminal, pull and run a model:
+                <code>ollama run llama3</code>
+              </li>
+              <li>In Configure Engine, select <strong>Local Model</strong> with endpoint <code>http://localhost:11434/v1</code> and model <code>llama3:latest</code>.</li>
+              <li>Click <strong>Test Connection</strong> and <strong>Save &amp; Activate</strong>.</li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="guide-card">
+          <div class="guide-card-head">
+            <span class="guide-num">3</span>
+            <div class="guide-card-title-group">
+              <h4>Claude AI</h4>
+              <span class="provider-badge badge-purple">Agent SDK</span>
+            </div>
+          </div>
+          <div class="guide-card-body">
+            <p>Provides deep pedagogical reasoning through your local Claude Code CLI installation.</p>
+            <ol class="guide-steps">
+              <li>Install the Claude CLI: <code>npm install -g @anthropic-ai/claude-code</code></li>
+              <li>Log in with your Anthropic subscription: <code>claude login</code></li>
+              <li>Select <strong>Claude AI</strong> in Configure Engine and click <strong>Save &amp; Activate</strong>.</li>
+            </ol>
+          </div>
+        </section>
+
+        <section class="guide-card">
+          <div class="guide-card-head">
+            <span class="guide-num">4</span>
+            <div class="guide-card-title-group">
+              <h4>OpenAI / Codex</h4>
+              <span class="provider-badge badge-gray">API Key</span>
+            </div>
+          </div>
+          <div class="guide-card-body">
+            <p>Connect with standard OpenAI API credentials.</p>
+            <ol class="guide-steps">
+              <li>Create a secret key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>.</li>
+              <li>Paste the key into Configure Engine with model <code>gpt-4o-mini</code>.</li>
+            </ol>
+          </div>
+        </section>
+      </div>
+
+      <div class="guide-footer-card">
+        <div class="guide-footer-content">
+          <div class="guide-footer-title">Need full documentation?</div>
+          <p class="guide-footer-desc">Detailed troubleshooting, prompt templates, and self-hosting guides are available in the repository README.</p>
+        </div>
+        <div class="guide-footer-actions">
+          <a href="https://github.com/ryanhubbart/feynman-slides#ai-critic-setup" target="_blank" rel="noopener" class="guide-github-btn">
+            View README on GitHub &nearr;
+          </a>
+          <button type="button" class="primary small" id="guideBackToConfig">
+            Configure Engine &rarr;
+          </button>
+        </div>
+      </div>
+    `;
+
+    wrap.querySelector("#guideBackToConfig")?.addEventListener("click", () => showTab("configure"));
+    return wrap;
+  };
+
+  const showTab = (tabName) => {
+    for (const b of tabs.children) b.classList.toggle("on", b.dataset.tab === tabName);
+    panel.replaceChildren();
+    if (tabName === "configure") panel.append(renderConfigureTab());
+    else panel.append(renderGuideTab());
+  };
+
+  for (const [name, label] of [["configure", "Configure Engine"], ["guide", "Setup Guide"]]) {
+    const b = button(label, "tab", () => showTab(name));
+    b.dataset.tab = name;
+    tabs.append(b);
+  }
+
+  showTab(initialTab);
+}

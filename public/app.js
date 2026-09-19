@@ -13,7 +13,7 @@ import { paintRail, scaleRail } from "./rail.js";
 import { paintFormat, applyMark, toggleList } from "./format.js";
 import { paintFindings, connect, disconnect, blockingNow } from "./critic.js";
 import { paintBin, wireBin, showBin, binOpen } from "./bin.js";
-import { openLayouts, openTemplates, openNewDeck, openMoveDialog } from "./library.js";
+import { openLayouts, openTemplates, openNewDeck, openMoveDialog, openCriticSetupModal } from "./library.js";
 import { present } from "./present.js";
 import { miniature } from "./preview.js";
 import { pick } from "./theme.js";
@@ -304,6 +304,15 @@ function buildHelp() {
     className: "foot",
     textContent: "Marks: **bold**, *italic*, `code`, ==highlight==, and a line starting with - is a bullet.",
   }));
+  const aiRow = document.createElement("div");
+  aiRow.className = "help-ai-row";
+  const aiBtn = document.createElement("button");
+  aiBtn.type = "button";
+  aiBtn.className = "ghost small";
+  aiBtn.innerHTML = `${iconSvg("sparkle", 14)} Configure AI Reviewer (Gemini, Claude, Ollama, OpenAI) &rarr;`;
+  aiBtn.onclick = () => { help.close(); openCriticSetupModal(); };
+  aiRow.append(aiBtn);
+  help.append(aiRow);
   document.body.append(help);
 }
 const toggleHelp = () => (help.open ? help.close() : help.showModal());
@@ -390,6 +399,7 @@ $("criticBtn").onclick = () => toggleCritic();
 if ($("criticClose")) $("criticClose").onclick = () => toggleCritic(true);
 $("theme").onclick = cycleTheme;
 $("homeTheme").onclick = cycleTheme;
+if ($("homeAiSetup")) $("homeAiSetup").onclick = () => openCriticSetupModal();
 $("present").onclick = () => present(S.idx);
 $("helpBtn").onclick = toggleHelp;
 $("new").onclick = openNewDeck;

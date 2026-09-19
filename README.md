@@ -41,6 +41,32 @@ Jargon blocks on purpose. "Collisions are handled by the collision resolution st
 
 If the critic is wrong, reject the finding. It asks for one sentence explaining why, stores your reasoning, and never flags that exact issue again.
 
+### AI Critic Setup (Claude, Gemini, Local Ollama, OpenAI)
+The critic checks your slides for factual accuracy, unexplained buzzwords, and contradictions with your lecture bin as you write. Click the review engine pill in the editor or the spark button on the home bar to configure your reviewer:
+
+1. **Google Gemini (Recommended - 1 Minute, Free)**:
+   - Head to [Google AI Studio](https://aistudio.google.com/app/apikey) and click **Create API Key**.
+   - In Feynman Slides, choose **Google Gemini**, paste your key, and click **Save & Activate**.
+   - Free tier includes 15 requests per minute with no credit card required.
+
+2. **Local Ollama (Free, 100% Private, Offline)**:
+   - Install Ollama from [ollama.com](https://ollama.com).
+   - In your terminal, run `ollama run llama3` (or `mistral`).
+   - In Feynman Slides, select **Local Model** with endpoint `http://localhost:11434/v1` and model `llama3:latest`.
+   - All critique runs on your CPU or GPU. Zero slide text leaves your computer.
+
+3. **Claude AI (Agent SDK / CLI)**:
+   - Install the Claude CLI: `npm install -g @anthropic-ai/claude-code`.
+   - Run `claude login` in your terminal to authenticate.
+   - Feynman Slides automatically hooks into your local CLI login session.
+
+4. **OpenAI / Codex (API Key)**:
+   - Create an API key in your [OpenAI Dashboard](https://platform.openai.com/api-keys).
+   - In Feynman Slides, select **OpenAI**, enter your key and model (`gpt-4o-mini`).
+
+5. **Built-in Heuristic Reviewer (Offline)**:
+   - Zero setup required. Uses instant pattern matching to flag ungrounded jargon words, absolute claims, and source bin contradictions offline.
+
 ### Fast Writing
 Slide decks usually get bogged down in drag-handles and alignment bars. Here:
 - Press `T` and click anywhere: the text box drops right at your cursor.

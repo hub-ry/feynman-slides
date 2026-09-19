@@ -8,9 +8,10 @@
 // to go get it. Without that, the pane answered a question about the slide you
 // were on a minute ago, and answered it confidently.
 
-import { S, api, save, emit, slide } from "./state.js";
+import { S, api, save, emit, on, slide } from "./state.js";
 import { iconSvg } from "./icons.js";
 import { slideDigest, stillApplies, hasText } from "./readable.js";
+import { openCriticSetupModal } from "./library.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -164,20 +165,16 @@ function bindHeaderEvents(goTo) {
   if (headerBound) return;
   headerBound = true;
 
+  on("critic-configured", () => {
+    updateEngineUI();
+    firmReview();
+  });
+
   const engineBtn = $("criticEngineBtn");
   if (engineBtn) {
-    engineBtn.onclick = async (e) => {
+    engineBtn.onclick = (e) => {
       e.stopPropagation();
-      const next = S.criticProvider === "heuristic" ? "claude" : "heuristic";
-      S.criticProvider = next;
-      S.criticMode = next === "heuristic" ? "Local Heuristic" : "Claude AI";
-      updateEngineUI();
-      await fetch("/api/critic/mode", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: next, slug: S.slug }),
-      }).catch(() => {});
-      firmReview();
+      openCriticSetupModal();
     };
   }
 
@@ -207,11 +204,6 @@ function bindHeaderEvents(goTo) {
 
 /**
  * The pill names the engine that actually ran.
- *
- * It used to compare the engine's DISPLAY name against the string "heuristic",
- * which nothing ever equals - so a deck falling back to the offline critic
- * went on showing "Claude", and the one thing the pill exists to tell you was
- * the one thing it could not say.
  */
 function updateEngineUI() {
   const provider = S.criticProvider ?? "heuristic";
@@ -223,7 +215,7 @@ function updateEngineUI() {
   if (dot) dot.className = `engine-dot ${isHeuristic ? "heuristic" : "claude"}`;
   if (label) label.textContent = NAMES[provider] ?? "Local";
   if (btn) {
-    btn.title = `${S.criticMode ?? "Local Heuristic"} - click to switch to ${isHeuristic ? "Claude" : "the local heuristic"}`;
+    btn.title = `AI Reviewer: ${S.criticMode ?? NAMES[provider] ?? "Local"} - click to configure`;
   }
 }
 
@@ -467,6 +459,18 @@ export function paintFindings(goTo) {
   if (!box) return;
   box.replaceChildren();
 
+  if (S.criticProvider === "heuristic") {
+    const banner = document.createElement("div");
+    banner.className = "critic-offline-banner";
+    banner.innerHTML = `
+      <span class="offline-icon">${iconSvg("sparkle", 14)}</span>
+      <span class="offline-text">Running offline rules. Connect Gemini, Claude, or Ollama for deep checks.</span>
+      <button type="button" class="offline-btn">Set up AI &rarr;</button>
+    `;
+    banner.querySelector(".offline-btn").onclick = () => openCriticSetupModal();
+    box.append(banner);
+  }
+
   if (filterMode === "current") {
     // Four answers, and the pane has to give the right one. An empty findings
     // list used to mean "clean", "never looked" and "looked, at words you have
@@ -491,6 +495,14 @@ export function paintFindings(goTo) {
         desc: `No factual conflicts or unexplained jargon on slide ${S.idx + 1}.`,
         clean: true,
       });
+      if (S.criticProvider === "heuristic") {
+        const setupAiBtn = document.createElement("button");
+        setupAiBtn.type = "button";
+        setupAiBtn.className = "empty-ai-btn";
+        setupAiBtn.textContent = "Configure AI Reviewer (Gemini, Claude, Ollama) \u2192";
+        setupAiBtn.onclick = () => openCriticSetupModal();
+        empty.append(setupAiBtn);
+      }
       if (allActive.length > 0) {
         const switchBtn = document.createElement("button");
         switchBtn.type = "button";
