@@ -365,7 +365,8 @@ function toggleCritic(force) {
   $("criticBtn").classList.toggle("on", !shut);
   fit();
 }
-toggleCritic(localStorage.getItem("critic") === "shut");
+const savedCritic = localStorage.getItem("critic");
+toggleCritic(savedCritic ? savedCritic === "shut" : window.innerWidth <= 860);
 
 // --- buttons --------------------------------------------------------------
 
@@ -386,6 +387,7 @@ addEventListener("pointerdown", (e) => {
 $("tplBtn").onclick = () => openTemplates();
 $("homeTemplates").onclick = () => openTemplates("community");
 $("criticBtn").onclick = () => toggleCritic();
+if ($("criticClose")) $("criticClose").onclick = () => toggleCritic(true);
 $("theme").onclick = cycleTheme;
 $("homeTheme").onclick = cycleTheme;
 $("present").onclick = () => present(S.idx);

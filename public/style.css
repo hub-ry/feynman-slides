@@ -713,6 +713,32 @@ button.upload svg { width: 15px; height: 15px; stroke-width: 2.4; }
 @keyframes spinRecheck {
   100% { transform: rotate(360deg); }
 }
+.critic-close-btn {
+  display: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  color: var(--ink);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .1s ease;
+}
+.critic-close-btn svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.critic-close-btn:hover {
+  border-color: var(--dim);
+  color: var(--ink);
+  background: var(--hover);
+}
 
 .critique-filters {
   display: flex;
@@ -1839,6 +1865,9 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   }
   body.no-critic .critique {
     display: none;
+  }
+  .critic-close-btn {
+    display: inline-flex;
   }
 }
 
