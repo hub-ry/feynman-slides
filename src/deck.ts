@@ -7,7 +7,6 @@
 // and a deck names one. Two decks with the same slides and different templates
 // are the same file with one word changed, which is the point.
 
-import { plain } from "../public/render.js";
 import { instantiate } from "../public/theme.js";
 
 export const W = 960;
@@ -167,30 +166,13 @@ export function migrate(deck: Deck): Deck {
 }
 
 /**
- * What the critic reads.
+ * What the critic reads, and the fingerprint of it.
  *
- * Reading order, not array order: elements are sorted top-to-bottom then
- * left-to-right, because array order is creation order and someone who adds a
- * heading last should not have their slide read to the critic upside down.
- *
- * The marks come off first. `**a hash table**` and `a hash table` are the same
- * claim, and a critic quoting asterisks back at you is quoting something you
- * cannot find on the slide.
+ * Defined once in `public/readable.js` and re-exported here, because the
+ * browser needs the same answer: it is what tells the review pane whether the
+ * critique it is showing is still about the words on the slide.
  */
-export function readable(slide: Slide): { title: string; body: string[] } {
-  const texts = slide.els
-    .filter((e): e is TextEl => e.type === "text" && plain(e.text).trim().length > 0)
-    .sort((a, b) => a.y - b.y || a.x - b.x);
-  const [head, ...rest] = texts;
-  const images = slide.els.filter((e): e is ImageEl => e.type === "image" && Boolean(e.src));
-  const body = rest.flatMap((t) =>
-    plain(t.text).split("\n").map((l) => l.trim()).filter(Boolean),
-  );
-  for (const img of images) {
-    if (img.alt.trim()) body.push(`[image: ${img.alt.trim()}]`);
-  }
-  return { title: plain(head?.text ?? "").split("\n")[0]?.trim() ?? "", body };
-}
+export { readable, slideText, slideDigest, hasText, stillApplies } from "../public/readable.js";
 
 /** Stable identity for a slide. Its own id, so renaming a heading does not orphan its findings. */
 export const slideKey = (slide: Slide): string => slide.id;

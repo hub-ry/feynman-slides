@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "public/theme.js", "public/render.js"]
+  "include": ["src/**/*.ts", "public/theme.js", "public/render.js", "public/readable.js"]
 }
