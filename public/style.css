@@ -2062,6 +2062,13 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 /* --- AI critic setup modal ----------------------------------------------- */
 dialog.sheet.critic-modal {
   width: min(840px, calc(100vw - 2.5rem));
+  max-height: 88vh;
+}
+
+dialog.sheet.critic-modal .sheet-body {
+  overflow-y: auto;
+  max-height: calc(88vh - 75px);
+  padding: 1.1rem 1.3rem 1.5rem;
 }
 
 .critic-modal-panel {
@@ -2172,7 +2179,12 @@ dialog.sheet.critic-modal {
   display: flex;
   flex-direction: column;
   gap: .35rem;
+  white-space: normal;
   transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+
+.critic-provider-card * {
+  white-space: normal;
 }
 
 .critic-provider-card:hover {
@@ -2457,7 +2469,9 @@ dialog.sheet.critic-modal {
   align-items: center;
   justify-content: space-between;
   gap: .75rem;
-  margin-top: .3rem;
+  margin-top: .5rem;
+  padding-top: .85rem;
+  border-top: 1px solid var(--rule);
 }
 
 .critic-guide-link {
