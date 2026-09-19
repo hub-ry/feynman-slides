@@ -11,6 +11,7 @@ import { miniature } from "./preview.js";
 import { W } from "./theme.js";
 import { openOn } from "./critic.js";
 import * as ops from "./ops.js";
+import { computeSlideScore, computeDeckClarity, openScorePopover } from "./score.js";
 
 const rail = document.getElementById("rail");
 
@@ -100,28 +101,129 @@ function makeInserter(afterIndex) {
   return slot;
 }
 
+let showScores = localStorage.getItem("show_clarity_scores") !== "false";
+let rankMode = false;
+
 export function paintRail() {
   const t = template();
   rail.replaceChildren();
   closeRailMenu();
 
-  S.deck.slides.forEach((s, i) => {
+  if (!S.deck || !Array.isArray(S.deck.slides) || S.deck.slides.length === 0) return;
+
+  const deckClarity = computeDeckClarity(S.deck, S.critiques);
+
+  // --- Rail Header with Deck Clarity & Controls ---
+  const header = document.createElement("div");
+  header.className = "rail-header";
+
+  const clarityBtn = document.createElement("button");
+  clarityBtn.type = "button";
+  clarityBtn.className = "rail-deck-score";
+  clarityBtn.title = `Deck Feynman Clarity: ${deckClarity.averageScore}/100 (${deckClarity.summary}). Click for current slide breakdown.`;
+  clarityBtn.innerHTML = `
+    <span class="score-dot" style="background:${deckClarity.color}"></span>
+    <span class="score-lbl">Clarity:</span>
+    <strong style="color:${deckClarity.color}">${deckClarity.averageScore}</strong>
+    <span class="score-grd">(${deckClarity.grade})</span>
+  `;
+  clarityBtn.onclick = () => {
+    const curSlide = S.deck.slides[S.idx];
+    if (curSlide) {
+      const curScore = computeSlideScore(curSlide, S.deck, S.critiques.findings[curSlide.id] || []);
+      openScorePopover(S.idx, curScore, () => ops.go(S.idx));
+    }
+  };
+
+  const controls = document.createElement("div");
+  controls.className = "rail-controls";
+
+  const rankBtn = document.createElement("button");
+  rankBtn.type = "button";
+  rankBtn.className = "rail-icon-btn" + (rankMode ? " active" : "");
+  rankBtn.title = rankMode ? "Sorted: Needs attention first. Click to return to slide order." : "Sort slides by Feynman clarity (weakest first)";
+  rankBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M9 18h6"/></svg><span>${rankMode ? "Ranked" : "Rank"}</span>`;
+  rankBtn.onclick = () => {
+    rankMode = !rankMode;
+    paintRail();
+  };
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.type = "button";
+  toggleBtn.className = "rail-icon-btn" + (showScores ? " active" : "");
+  toggleBtn.title = showScores ? "Hide slide score badges" : "Show slide score badges";
+  toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  toggleBtn.onclick = () => {
+    showScores = !showScores;
+    localStorage.setItem("show_clarity_scores", showScores ? "true" : "false");
+    paintRail();
+  };
+
+  controls.append(rankBtn, toggleBtn);
+  header.append(clarityBtn, controls);
+  rail.append(header);
+
+  if (rankMode) {
+    const rankNotice = document.createElement("div");
+    rankNotice.className = "rail-rank-notice";
+    rankNotice.innerHTML = `<span>Ranked: Weakest First</span><button class="rank-reset-btn" type="button">Reset</button>`;
+    rankNotice.querySelector(".rank-reset-btn").onclick = () => {
+      rankMode = false;
+      paintRail();
+    };
+    rail.append(rankNotice);
+  }
+
+  const slideEntries = rankMode
+    ? deckClarity.needsWorkOrder.map((item, rankIdx) => ({
+        s: S.deck.slides[item.index],
+        i: item.index,
+        rankIdx,
+        scoreResult: item.scoreResult,
+      }))
+    : S.deck.slides.map((s, i) => ({
+        s,
+        i,
+        rankIdx: null,
+        scoreResult: computeSlideScore(s, S.deck, S.critiques.findings[s.id] || []),
+      }));
+
+  slideEntries.forEach(({ s, i, rankIdx, scoreResult }, listIdx) => {
     const row = document.createElement("div");
-    row.className = "thumb" + (i === S.idx ? " on" : "");
-    row.draggable = true;
+    row.className = "thumb" + (i === S.idx ? " on" : "") + (rankMode ? " ranked-item" : "");
+    row.draggable = !rankMode;
     row.dataset.i = i;
 
-    row.append(Object.assign(document.createElement("span"), { className: "n", textContent: i + 1 }));
+    const numBadge = document.createElement("span");
+    numBadge.className = "n";
+    numBadge.textContent = rankMode ? `#${rankIdx + 1}` : i + 1;
+    if (rankMode) numBadge.title = `Slide ${i + 1} (Rank #${rankIdx + 1})`;
+    row.append(numBadge);
 
     const frame = document.createElement("div");
     frame.className = "frame";
     frame.append(miniature(s.els, t, { srcFor: (e) => `/api/deck/${S.slug}/images/${encodeURIComponent(e.src)}` }));
+
     if (openOn(s.id)) {
       const flag = document.createElement("span");
       flag.className = "flag";
       flag.title = "unresolved findings";
       frame.append(flag);
     }
+
+    if (showScores) {
+      const scoreBadge = document.createElement("button");
+      scoreBadge.type = "button";
+      scoreBadge.className = `score-badge tier-${scoreResult.tier}`;
+      scoreBadge.title = `Feynman Clarity: ${scoreResult.score}/100 (${scoreResult.summary}). Click for breakdown.`;
+      scoreBadge.textContent = scoreResult.score;
+      scoreBadge.onclick = (e) => {
+        e.stopPropagation();
+        openScorePopover(i, scoreResult, () => ops.go(i));
+      };
+      frame.append(scoreBadge);
+    }
+
     frame.onclick = () => ops.go(i);
     row.append(frame);
 
@@ -150,46 +252,51 @@ export function paintRail() {
     }
     row.append(actions);
 
-    row.ondragstart = (e) => {
-      dragFrom = i;
-      row.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", String(i));
-    };
-    row.ondragend = () => { dragFrom = null; paintRail(); };
-    row.ondragover = (e) => {
-      if (dragFrom === null) return;
-      e.preventDefault();
-      const box = row.getBoundingClientRect();
-      const after = e.clientY > box.top + box.height / 2;
-      for (const other of rail.children) other.classList.remove("drop-before", "drop-after");
-      row.classList.add(after ? "drop-after" : "drop-before");
-    };
-    row.ondrop = (e) => {
-      if (dragFrom === null) return;
-      e.preventDefault();
-      const box = row.getBoundingClientRect();
-      const after = e.clientY > box.top + box.height / 2;
-      let to = i + (after ? 1 : 0);
-      if (to > dragFrom) to -= 1;
-      ops.moveSlide(dragFrom, to);
-      dragFrom = null;
-    };
+    if (!rankMode) {
+      row.ondragstart = (e) => {
+        dragFrom = i;
+        row.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(i));
+      };
+      row.ondragend = () => { dragFrom = null; paintRail(); };
+      row.ondragover = (e) => {
+        if (dragFrom === null) return;
+        e.preventDefault();
+        const box = row.getBoundingClientRect();
+        const after = e.clientY > box.top + box.height / 2;
+        for (const other of rail.children) other.classList.remove("drop-before", "drop-after");
+        row.classList.add(after ? "drop-after" : "drop-before");
+      };
+      row.ondrop = (e) => {
+        if (dragFrom === null) return;
+        e.preventDefault();
+        const box = row.getBoundingClientRect();
+        const after = e.clientY > box.top + box.height / 2;
+        let to = i + (after ? 1 : 0);
+        if (to > dragFrom) to -= 1;
+        ops.moveSlide(dragFrom, to);
+        dragFrom = null;
+      };
+    }
 
     rail.append(row);
 
-    // Subtle between-slide inserter
-    if (i < S.deck.slides.length - 1) {
+    // Between-slide inserter (only in normal sequential order)
+    if (!rankMode && i < S.deck.slides.length - 1) {
       rail.append(makeInserter(i + 1));
     }
   });
 
-  const add = document.createElement("button");
-  add.className = "add";
-  add.textContent = "+  slide";
-  add.title = "New slide  (N)";
-  add.onclick = () => ops.newSlide();
-  rail.append(add);
+  if (!rankMode) {
+    const add = document.createElement("button");
+    add.className = "add";
+    add.textContent = "+  slide";
+    add.title = "New slide  (N)";
+    add.onclick = () => ops.newSlide();
+    rail.append(add);
+  }
+
   scaleRail();
 }
 

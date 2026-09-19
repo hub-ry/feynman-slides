@@ -69,7 +69,7 @@ on("template", paintAll);
 on("canvas", () => { paintCanvas(); paintToolbar(); });
 on("rail", paintRail);
 on("selection", paintFormat);
-on("findings", () => paintFindings(ops.go));
+on("findings", () => { paintFindings(ops.go); paintRail(); });
 on("gate", paintGate);
 on("status", paintStatus);
 on("bin", paintBin);
