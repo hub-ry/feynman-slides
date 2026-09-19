@@ -347,7 +347,7 @@ function paintTheme(mode) {
   labelButtons();
 }
 
-let theme = localStorage.getItem("theme") ?? "system";
+let theme = new URLSearchParams(location.search).get("theme") || localStorage.getItem("theme") || "system";
 if (!THEMES.includes(theme)) theme = "system";
 paintTheme(theme);
 function cycleTheme() {

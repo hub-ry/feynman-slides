@@ -7,7 +7,8 @@
 <script>
   // Applied before first paint so the correct theme is never repainted over.
   try {
-    const t = localStorage.getItem("theme");
+    const q = new URLSearchParams(location.search).get("theme");
+    const t = q || localStorage.getItem("theme");
     if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
   } catch {}
 </script>
@@ -77,8 +78,8 @@
 
   <span id="status" class="status"></span>
   <span id="gate" class="gate" hidden></span>
-  <button id="criticBtn" class="icon" title="Critic">
-    <svg viewBox="0 0 24 24"><path d="M4.5 5.5h15v10h-8l-4 3.5v-3.5h-3z"/></svg>
+  <button id="criticBtn" class="icon" title="Review panel  (C)" aria-label="Review panel">
+    <svg viewBox="0 0 256 256" width="17" height="17" fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M208,40H48A8,8,0,0,0,40,48V112c0,56.7,35.9,103.8,85.2,118.9a7.8,7.8,0,0,0,5.6,0C180.1,215.8,216,168.7,216,112V48A8,8,0,0,0,208,40Z"/><polyline points="88 112 112 136 168 80"/></svg>
     <span id="criticCount" class="badge" hidden></span>
   </button>
   <button id="helpBtn" class="icon" title="Keys  (?)" aria-label="Keys">
@@ -142,8 +143,28 @@
 
   </section>
 
-  <aside class="critique">
-    <div class="critique-head">Critic</div>
+  <aside class="critique" aria-label="Deck Review">
+    <div class="critique-header">
+      <div class="critique-title-row">
+        <div class="critique-title-group">
+          <span class="critique-title">Review</span>
+          <span id="critiqueStatusPill" class="critique-status-pill" hidden></span>
+        </div>
+        <div class="critique-engine-wrap">
+          <button id="criticEngineBtn" class="engine-toggle-btn" type="button" title="Engine: Click to switch between Local and Claude">
+            <span id="criticEngineDot" class="engine-dot"></span>
+            <span id="criticEngineLabel">Local</span>
+          </button>
+          <button id="criticRecheck" class="critic-recheck-btn" type="button" title="Re-check this slide">
+            <svg viewBox="0 0 256 256" width="13" height="13" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"><polyline points="176.4 99.7 224.2 99.7 224.2 51.9"/><path d="M190.2,190.2a88,88,0,1,1,0-124.4l34,33.9"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="critique-filters">
+        <button id="criticFilterCurrent" class="filter-btn on" type="button">This slide <span id="criticCurrentCount" class="fcount">0</span></button>
+        <button id="criticFilterAll" class="filter-btn" type="button">All slides <span id="criticAllCount" class="fcount">0</span></button>
+      </div>
+    </div>
     <div id="findings"></div>
   </aside>
 </main>

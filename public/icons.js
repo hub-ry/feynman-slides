@@ -95,6 +95,34 @@ export const PHOSPHOR_ICONS = {
   play: `
     <polygon points="80 40 208 128 80 216 80 40" fill="currentColor" stroke="none"/>
   `,
+
+  "shield-check": `
+    <path d="M208,40H48A8,8,0,0,0,40,48V112c0,56.7,35.9,103.8,85.2,118.9a7.8,7.8,0,0,0,5.6,0C180.1,215.8,216,168.7,216,112V48A8,8,0,0,0,208,40Z"/>
+    <polyline points="88 112 112 136 168 80"/>
+  `,
+
+  "lock-simple": `
+    <rect x="40" y="88" width="176" height="128" rx="8"/>
+    <path d="M88,88V56a40,40,0,0,1,80,0V88"/>
+  `,
+
+  "arrows-clockwise": `
+    <polyline points="176.4 99.7 224.2 99.7 224.2 51.9"/>
+    <path d="M190.2,190.2a88,88,0,1,1,0-124.4l34,33.9"/>
+  `,
+
+  check: `
+    <polyline points="216 72 104 184 48 128"/>
+  `,
+
+  "sliders-horizontal": `
+    <line x1="40" y1="80" x2="152" y2="80"/>
+    <line x1="184" y1="80" x2="216" y2="80"/>
+    <circle cx="168" cy="80" r="16"/>
+    <line x1="40" y1="176" x2="72" y2="176"/>
+    <line x1="104" y1="176" x2="216" y2="176"/>
+    <circle cx="88" cy="176" r="16"/>
+  `,
 };
 
 /**

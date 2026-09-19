@@ -123,9 +123,9 @@ export function paintRail() {
   clarityBtn.title = `Deck Feynman Clarity: ${deckClarity.averageScore}/100 (${deckClarity.summary}). Click for current slide breakdown.`;
   clarityBtn.innerHTML = `
     <span class="score-dot" style="background:${deckClarity.color}"></span>
-    <span class="score-lbl">Clarity:</span>
-    <strong style="color:${deckClarity.color}">${deckClarity.averageScore}</strong>
-    <span class="score-grd">(${deckClarity.grade})</span>
+    <span class="score-lbl">Clarity</span>
+    <strong class="score-num" style="color:${deckClarity.color}">${deckClarity.averageScore}</strong>
+    <span class="score-grd">${deckClarity.grade}</span>
   `;
   clarityBtn.onclick = () => {
     const curSlide = S.deck.slides[S.idx];
@@ -141,8 +141,8 @@ export function paintRail() {
   const rankBtn = document.createElement("button");
   rankBtn.type = "button";
   rankBtn.className = "rail-icon-btn" + (rankMode ? " active" : "");
-  rankBtn.title = rankMode ? "Sorted: Needs attention first. Click to return to slide order." : "Sort slides by Feynman clarity (weakest first)";
-  rankBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M9 18h6"/></svg><span>${rankMode ? "Ranked" : "Rank"}</span>`;
+  rankBtn.title = rankMode ? "Sorted: Weakest clarity first (click to reset order)" : "Sort slides by clarity (weakest first)";
+  rankBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M9 18h6"/></svg>`;
   rankBtn.onclick = () => {
     rankMode = !rankMode;
     paintRail();
@@ -151,8 +151,8 @@ export function paintRail() {
   const toggleBtn = document.createElement("button");
   toggleBtn.type = "button";
   toggleBtn.className = "rail-icon-btn" + (showScores ? " active" : "");
-  toggleBtn.title = showScores ? "Hide slide score badges" : "Show slide score badges";
-  toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  toggleBtn.title = showScores ? "Hide clarity badges on slides" : "Show clarity badges on slides";
+  toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
   toggleBtn.onclick = () => {
     showScores = !showScores;
     localStorage.setItem("show_clarity_scores", showScores ? "true" : "false");
