@@ -358,7 +358,7 @@ export async function geminiReview(
   userPrompt: string,
   apiKey: string,
   model: string = "gemini-2.5-flash",
-  timeoutMs: number = 8000,
+  timeoutMs: number = 20000,
 ): Promise<Array<Omit<Finding, "id" | "slideKey">>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -402,7 +402,7 @@ export async function openAICompatibleReview(
   endpoint: string,
   tokenOrKey: string | undefined,
   model: string,
-  timeoutMs: number = 8000,
+  timeoutMs: number = 20000,
 ): Promise<Array<Omit<Finding, "id" | "slideKey">>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -641,6 +641,7 @@ export function startCritic(
    * told what ran, went on claiming the model was reading the slide.
    */
   const down = new Set<CriticProvider>();
+  const failureCount = new Map<CriticProvider, number>();
 
   let resolvedAt = 0;
   const RESOLVE_TTL_MS = 30_000;
@@ -662,19 +663,29 @@ export function startCritic(
       : res.name;
   }
 
-  /** Record that a provider is not answering, and drop to the heuristic for good. */
-  function degrade(provider: CriticProvider, why: unknown): void {
-    if (!down.has(provider)) {
-      console.warn(`[critic] ${provider} unavailable, staying on the local heuristic:`, why);
+  function recordSuccess(provider: CriticProvider): void {
+    failureCount.set(provider, 0);
+  }
+
+  /** Record a provider failure. Only drop to heuristic after repeated failures or hard error. */
+  function recordFailure(provider: CriticProvider, why: unknown, forceDegrade = false): void {
+    const count = (failureCount.get(provider) ?? 0) + 1;
+    failureCount.set(provider, count);
+    console.warn(`[critic] ${provider} error (${count}/3):`, why);
+    if (forceDegrade || count >= 3) {
+      if (!down.has(provider)) {
+        console.warn(`[critic] ${provider} unavailable after ${count} failures, staying on the local heuristic:`, why);
+      }
+      down.add(provider);
+      resolvedProviderType = "heuristic";
+      resolvedModeName = `Local Heuristic (${provider} unavailable)`;
     }
-    down.add(provider);
-    resolvedProviderType = "heuristic";
-    resolvedModeName = `Local Heuristic (${provider} unavailable)`;
   }
 
   /** Anything that changes the configuration gives every provider another chance. */
   function reconfigured(): void {
     down.clear();
+    failureCount.clear();
     resolvedAt = 0;
     void resolved();
   }
@@ -749,13 +760,17 @@ export function startCritic(
             if (msg.type === "result") {
               const done = inflight.resolve;
               inflight.resolve = null;
-              if (msg.is_error) degrade("claude", msg.result);
+              if (msg.is_error) {
+                recordFailure("claude", msg.result, true);
+              } else {
+                recordSuccess("claude");
+              }
               done?.(collected);
               collected = [];
             }
           }
         } catch (err) {
-          if (!closed) degrade("claude", (err as Error)?.message || err);
+          if (!closed) recordFailure("claude", (err as Error)?.message || err);
           claudeSession = null;
           if (inflight.resolve) {
             const done = inflight.resolve;
@@ -765,13 +780,19 @@ export function startCritic(
         }
       })();
     } catch (err) {
-      degrade("claude", err);
+      recordFailure("claude", err, true);
     }
   }
 
   async function reviewOne(slide: Slide, sources: Source[], firm: boolean): Promise<Finding[]> {
     if (closed) return [];
     currentKey = slideKey(slide);
+
+    if (firm && down.has(config.provider)) {
+      down.delete(config.provider);
+      failureCount.set(config.provider, 0);
+      resolvedAt = 0;
+    }
 
     await resolved();
 
@@ -800,11 +821,12 @@ export function startCritic(
       if (apiKey) {
         try {
           const model = config.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash";
-          const items = await geminiReview(userPrompt, apiKey, model, 7000);
+          const items = await geminiReview(userPrompt, apiKey, model, 20000);
+          recordSuccess("gemini");
           const findings = items.map((it) => ({ ...it, id: uid(), slideKey: currentKey }));
           return filterDismissed(findings, dismissedQuotes);
         } catch (err) {
-          degrade("gemini", (err as Error)?.message || err);
+          recordFailure("gemini", (err as Error)?.message || err);
         }
       }
     }
@@ -815,11 +837,12 @@ export function startCritic(
       if (apiKey) {
         try {
           const model = config.openaiModel || process.env.OPENAI_MODEL || "gpt-4o-mini";
-          const items = await openAICompatibleReview(userPrompt, "https://api.openai.com/v1", apiKey, model, 7000);
+          const items = await openAICompatibleReview(userPrompt, "https://api.openai.com/v1", apiKey, model, 20000);
+          recordSuccess("openai");
           const findings = items.map((it) => ({ ...it, id: uid(), slideKey: currentKey }));
           return filterDismissed(findings, dismissedQuotes);
         } catch (err) {
-          degrade("openai", (err as Error)?.message || err);
+          recordFailure("openai", (err as Error)?.message || err);
         }
       }
     }
@@ -829,11 +852,12 @@ export function startCritic(
       const endpoint = config.localEndpoint || process.env.LOCAL_AI_URL || process.env.CRITIC_ENDPOINT || "http://localhost:11434/v1";
       const model = config.localModel || process.env.LOCAL_MODEL || process.env.CRITIC_MODEL || "llama3:latest";
       try {
-        const items = await openAICompatibleReview(userPrompt, endpoint, config.localToken, model, 8000);
+        const items = await openAICompatibleReview(userPrompt, endpoint, config.localToken, model, 20000);
+        recordSuccess("local");
         const findings = items.map((it) => ({ ...it, id: uid(), slideKey: currentKey }));
         return filterDismissed(findings, dismissedQuotes);
       } catch (err) {
-        degrade("local", (err as Error)?.message || err);
+        recordFailure("local", (err as Error)?.message || err);
       }
     }
 
@@ -844,15 +868,17 @@ export function startCritic(
         return new Promise<Finding[]>((resolve) => {
           const timer = setTimeout(() => {
             if (inflight.resolve) {
-              degrade("claude", "timed out");
+              recordFailure("claude", "timed out (35s)");
+              claudeSession = null;
               const done = inflight.resolve;
               inflight.resolve = null;
               done(heuristicReview(slide, sources, firm, dismissedQuotes, currentKey));
             }
-          }, 4500);
+          }, 35000);
 
           inflight.resolve = (res) => {
             clearTimeout(timer);
+            recordSuccess("claude");
             resolve(filterDismissed(res, dismissedQuotes));
           };
 
@@ -862,6 +888,8 @@ export function startCritic(
             );
           } catch {
             clearTimeout(timer);
+            recordFailure("claude", "delivery failed");
+            claudeSession = null;
             resolve(heuristicReview(slide, sources, firm, dismissedQuotes, currentKey));
           }
         });
