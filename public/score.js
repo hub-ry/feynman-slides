@@ -1,4 +1,5 @@
 import { iconSvg } from "./icons.js";
+import { stillApplies } from "./readable.js";
 
 // Feynman Clarity Score & Slide Ranking Engine
 //
@@ -20,26 +21,58 @@ const COMMON_JARGON = new Set([
 ]);
 
 /**
+ * The words in the source bin, built once per bin rather than once per slide.
+ *
+ * The rail scores every slide on every repaint, and a repaint happens on every
+ * edit. Rebuilding this set inside that loop made the cost of drawing the
+ * filmstrip the size of the bin times the number of slides, which is the shape
+ * of thing that is fine until someone pastes in a lecture.
+ */
+const tokenCache = new WeakMap();
+function tokensOf(sources) {
+  let hit = tokenCache.get(sources);
+  if (!hit) {
+    hit = new Set(
+      sources
+        .flatMap((s) => `${s.title || ""} ${s.text || ""}`.toLowerCase().split(/\s+/))
+        .map((w) => w.replace(/[^a-z0-9]/g, ""))
+        .filter((w) => w.length > 3),
+    );
+    tokenCache.set(sources, hit);
+  }
+  return hit;
+}
+
+/**
  * Compute the Feynman Clarity Score for a single slide.
+ *
+ * `rated` is false when there is nothing to judge. A slide with no words on it
+ * used to come back a 61 and a C - full marks for plain language, most of the
+ * marks for grounding - because every dimension scored the absence of a
+ * problem rather than the presence of an explanation. A grade on an empty
+ * slide is not a harsh grade, it is a meaningless one, and it made the two
+ * numbers on the rail that matter impossible to pick out.
  *
  * @param {object} slide
  * @param {object} deck
  * @param {Array} [findings]
- * @returns {object} { score, grade, tier, color, summary, dimensions, strengths, tips }
+ * @param {{reviewed?: boolean}} [opts] whether the critic has read this text
+ * @returns {object} { rated, score, grade, tier, color, summary, dimensions, strengths, tips }
  */
-export function computeSlideScore(slide, deck = {}, findings = []) {
-  if (!slide || !Array.isArray(slide.els)) {
-    return {
-      score: 0,
-      grade: "D",
-      tier: "d",
-      color: "#ef4444",
-      summary: "Empty slide",
-      dimensions: { brevity: 0, language: 0, structure: 0, grounding: 0 },
-      strengths: [],
-      tips: ["Add text elements or a title to begin."],
-    };
-  }
+export function computeSlideScore(slide, deck = {}, findings = [], opts = {}) {
+  const nothingToRate = {
+    rated: false,
+    score: 0,
+    grade: "–",
+    tier: "none",
+    color: "#94a3b8",
+    summary: "Nothing written yet",
+    dimensions: { brevity: 0, language: 0, structure: 0, grounding: 0 },
+    strengths: [],
+    tips: ["Write a headline and the one idea this slide teaches."],
+  };
+  if (!slide || !Array.isArray(slide.els)) return nothingToRate;
+  if (!slide.els.some((e) => e.type === "text" && e.text?.trim())) return nothingToRate;
 
   const textEls = slide.els.filter((e) => e.type === "text" && e.text?.trim());
   const allText = textEls.map((e) => e.text.trim()).join("\n");
@@ -92,15 +125,32 @@ export function computeSlideScore(slide, deck = {}, findings = []) {
     tips.push(`Unpack technical jargon: "${unique.slice(0, 3).join('", "')}" with simpler metaphors.`);
   }
 
-  // Deduct for critic findings on this slide
-  const activeFindings = (findings || []).filter((f) => !f.dismissed);
-  const blockingFindings = activeFindings.filter((f) => f.severity === "block" || f.type === "jargon" || f.type === "error");
-  const notes = activeFindings.filter((f) => f.severity !== "block" && f.type !== "jargon" && f.type !== "error");
+  // Deduct for critic findings on this slide.
+  //
+  // Only the ones still quoting something written here, and only the real
+  // severities. This used to test `f.severity === "block"` and `f.type`, and a
+  // finding has neither - so nothing ever counted as blocking, every error and
+  // every piece of jargon was scored as a mild note, and the grade on the
+  // thumbnail went on saying "high clarity" over a slide that could not be
+  // exported.
+  const activeFindings = (findings || []).filter((f) => !f.dismissed && stillApplies(f, slide));
+  const blockingFindings = activeFindings.filter((f) => f.severity === "error" || f.severity === "jargon");
+  const notes = activeFindings.filter((f) => f.severity === "note");
 
   if (blockingFindings.length > 0) {
     language = Math.max(4, language - blockingFindings.length * 10);
-    tips.push(`${blockingFindings.length} blocking finding${blockingFindings.length > 1 ? "s" : ""} flagged by critic.`);
-  } else if (activeFindings.length === 0 && wordCount >= 10) {
+    for (const f of blockingFindings.slice(0, 2)) {
+      tips.push(f.severity === "jargon"
+        ? `Critic: "${f.quote}" names a thing instead of explaining it.`
+        : `Critic: "${f.quote}" is contradicted or overstated.`);
+    }
+    if (blockingFindings.length > 2) {
+      tips.push(`${blockingFindings.length - 2} more blocking finding${blockingFindings.length - 2 > 1 ? "s" : ""} in the review pane.`);
+    }
+  } else if (opts.reviewed && activeFindings.length === 0 && wordCount >= 10) {
+    // Only once the critic has actually read THIS text. Claiming a clean bill
+    // of health for words nobody has looked at is the same lie the review pane
+    // used to tell, told with a number instead.
     strengths.push("Zero critic findings: plain conversational English.");
   }
 
@@ -140,13 +190,7 @@ export function computeSlideScore(slide, deck = {}, findings = []) {
   let grounding = 0;
   const sources = deck.sources || [];
   if (sources.length > 0) {
-    // Extract tokens from source titles and text
-    const sourceTokens = new Set(
-      sources
-        .flatMap((s) => `${s.title || ""} ${s.text || ""}`.toLowerCase().split(/\s+/))
-        .map((w) => w.replace(/[^a-z0-9]/g, ""))
-        .filter((w) => w.length > 3)
-    );
+    const sourceTokens = tokensOf(sources);
 
     const matches = lowerWords.filter((w) => sourceTokens.has(w));
     const uniqueMatches = new Set(matches);
@@ -210,6 +254,7 @@ export function computeSlideScore(slide, deck = {}, findings = []) {
   }
 
   return {
+    rated: true,
     score: total,
     grade,
     tier,
@@ -238,18 +283,19 @@ export function computeDeckClarity(deck, critiques = {}) {
     return { averageScore: 0, grade: "D", color: "#ef4444", summary: "No slides", rankedSlides: [] };
   }
 
-  const scoredSlides = deck.slides.map((s, idx) => {
-    const findings = critiques.findings?.[s.id] || [];
-    const result = computeSlideScore(s, deck, findings);
-    return {
-      index: idx,
-      slideId: s.id,
-      scoreResult: result,
-    };
-  });
+  const scoredSlides = deck.slides.map((s, idx) => ({
+    index: idx,
+    slideId: s.id,
+    scoreResult: computeSlideScore(s, deck, critiques.findings?.[s.id] || [], {
+      reviewed: critiques.reviewed?.[s.id] !== undefined,
+    }),
+  }));
 
-  const sum = scoredSlides.reduce((acc, curr) => acc + curr.scoreResult.score, 0);
-  const avg = Math.round(sum / scoredSlides.length);
+  // Blank slides are left out of the average rather than counted as bad ones.
+  // A deck you have started is not a deck you are failing at.
+  const rated = scoredSlides.filter((s) => s.scoreResult.rated);
+  const sum = rated.reduce((acc, curr) => acc + curr.scoreResult.score, 0);
+  const avg = rated.length ? Math.round(sum / rated.length) : 0;
 
   let grade = "D";
   let color = "#ef4444";
@@ -278,10 +324,13 @@ export function computeDeckClarity(deck, critiques = {}) {
     grade,
     color,
     summary,
+    rated: rated.length,
     slides: scoredSlides,
-    // Sorted by score ascending (lowest score / needs attention first)
-    needsWorkOrder: [...scoredSlides].sort((a, b) => a.scoreResult.score - b.scoreResult.score),
-    // Sorted by score descending (best first)
+    // Weakest first, with the unrated ones at the end: "needs work" should
+    // open on a slide you can actually do something about.
+    needsWorkOrder: [...scoredSlides].sort(
+      (a, b) => a.scoreResult.rated - b.scoreResult.rated || a.scoreResult.score - b.scoreResult.score,
+    ),
     bestFirstOrder: [...scoredSlides].sort((a, b) => b.scoreResult.score - a.scoreResult.score),
   };
 }
@@ -298,17 +347,34 @@ export function openScorePopover(slideIndex, scoreResult, onNavigate) {
   pop.id = "score-popover";
   pop.className = "score-popover";
 
-  pop.innerHTML = `
+  const header = `
     <div class="score-pop-header">
       <div class="score-pop-grade" style="background: ${scoreResult.color}22; color: ${scoreResult.color}; border: 1px solid ${scoreResult.color}55">
         ${scoreResult.grade}
       </div>
       <div class="score-pop-title">
-        <h4>Slide ${slideIndex + 1} Clarity: ${scoreResult.score}/100</h4>
+        <h4>${scoreResult.rated ? `Slide ${slideIndex + 1} Clarity: ${scoreResult.score}/100` : `Slide ${slideIndex + 1}`}</h4>
         <p>${scoreResult.summary}</p>
       </div>
       <button class="score-pop-close" aria-label="Close">&times;</button>
-    </div>
+    </div>`;
+
+  // Four bars at zero is not a breakdown of anything. An unwritten slide gets
+  // the one sentence that is actually true about it.
+  if (!scoreResult.rated) {
+    pop.innerHTML = `${header}
+      <div class="score-feedback">
+        <div class="feedback-section tips">
+          <h6>Start here</h6>
+          <ul>${scoreResult.tips.map((t) => `<li>${iconSvg("pencil-simple", 13)} <span>${escapeHtml(t)}</span></li>`).join("")}</ul>
+        </div>
+      </div>`;
+    wirePopover(pop);
+    document.body.append(pop);
+    return pop;
+  }
+
+  pop.innerHTML = `${header}
 
     <div class="score-bars">
       <div class="score-bar-row">
@@ -349,9 +415,15 @@ export function openScorePopover(slideIndex, scoreResult, onNavigate) {
     </div>
   `;
 
+  wirePopover(pop);
+  document.body.append(pop);
+  return pop;
+}
+
+/** Close on the button, on Escape, and on a click anywhere else. */
+function wirePopover(pop) {
   pop.querySelector(".score-pop-close").onclick = () => pop.remove();
 
-  // Close on Escape or click outside
   const onKey = (e) => {
     if (e.key === "Escape") {
       pop.remove();
@@ -369,9 +441,6 @@ export function openScorePopover(slideIndex, scoreResult, onNavigate) {
     };
     document.addEventListener("pointerdown", onClickOutside);
   }, 10);
-
-  document.body.append(pop);
-  return pop;
 }
 
 function escapeHtml(str) {

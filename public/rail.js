@@ -9,7 +9,7 @@
 import { S, emit, template } from "./state.js";
 import { miniature } from "./preview.js";
 import { W } from "./theme.js";
-import { openOn } from "./critic.js";
+import { openOn, standing } from "./critic.js";
 import * as ops from "./ops.js";
 import { computeSlideScore, computeDeckClarity, openScorePopover } from "./score.js";
 
@@ -120,7 +120,9 @@ export function paintRail() {
   const clarityBtn = document.createElement("button");
   clarityBtn.type = "button";
   clarityBtn.className = "rail-deck-score";
-  clarityBtn.title = `Deck Feynman Clarity: ${deckClarity.averageScore}/100 (${deckClarity.summary}). Click for current slide breakdown.`;
+  clarityBtn.title = deckClarity.rated
+    ? `Deck Feynman Clarity: ${deckClarity.averageScore}/100 across ${deckClarity.rated} written slide${deckClarity.rated > 1 ? "s" : ""} (${deckClarity.summary}). Click for the current slide's breakdown.`
+    : "Nothing written yet. The clarity score starts once a slide has words on it.";
   clarityBtn.innerHTML = `
     <span class="score-dot" style="background:${deckClarity.color}"></span>
     <span class="score-lbl">Clarity</span>
@@ -130,7 +132,9 @@ export function paintRail() {
   clarityBtn.onclick = () => {
     const curSlide = S.deck.slides[S.idx];
     if (curSlide) {
-      const curScore = computeSlideScore(curSlide, S.deck, S.critiques.findings[curSlide.id] || []);
+      const curScore = computeSlideScore(curSlide, S.deck, S.critiques.findings[curSlide.id] || [], {
+        reviewed: standing(curSlide) === "current",
+      });
       openScorePopover(S.idx, curScore, () => ops.go(S.idx));
     }
   };
@@ -185,7 +189,9 @@ export function paintRail() {
         s,
         i,
         rankIdx: null,
-        scoreResult: computeSlideScore(s, S.deck, S.critiques.findings[s.id] || []),
+        scoreResult: computeSlideScore(s, S.deck, S.critiques.findings[s.id] || [], {
+          reviewed: standing(s) === "current",
+        }),
       }));
 
   slideEntries.forEach(({ s, i, rankIdx, scoreResult }, listIdx) => {
@@ -204,7 +210,7 @@ export function paintRail() {
     frame.className = "frame";
     frame.append(miniature(s.els, t, { srcFor: (e) => `/api/deck/${S.slug}/images/${encodeURIComponent(e.src)}` }));
 
-    if (openOn(s.id)) {
+    if (openOn(s)) {
       const flag = document.createElement("span");
       flag.className = "flag";
       flag.title = "unresolved findings";
@@ -214,9 +220,13 @@ export function paintRail() {
     if (showScores) {
       const scoreBadge = document.createElement("button");
       scoreBadge.type = "button";
-      scoreBadge.className = `score-badge tier-${scoreResult.tier}`;
-      scoreBadge.title = `Feynman Clarity: ${scoreResult.score}/100 (${scoreResult.summary}). Click for breakdown.`;
-      scoreBadge.textContent = scoreResult.score;
+      const st = standing(s);
+      scoreBadge.className = `score-badge tier-${scoreResult.tier}` + (st === "stale" || st === "reading" ? " unsettled" : "");
+      scoreBadge.title = scoreResult.rated
+        ? `Feynman Clarity: ${scoreResult.score}/100 (${scoreResult.summary})`
+          + (st === "current" ? ". Click for breakdown." : ". The critic has not read this version yet.")
+        : "Nothing written on this slide yet.";
+      scoreBadge.textContent = scoreResult.rated ? scoreResult.score : "–";
       scoreBadge.onclick = (e) => {
         e.stopPropagation();
         openScorePopover(i, scoreResult, () => ops.go(i));
