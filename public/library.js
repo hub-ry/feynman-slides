@@ -419,8 +419,11 @@ export async function openEditor(id, { fork = false } = {}) {
 
 // --- a new deck -----------------------------------------------------------
 
-export function openNewDeck() {
-  const { body, close } = modal("New deck", "One deck is one topic you are teaching yourself.");
+export function openNewDeck({ folder } = {}) {
+  const { body, close } = modal(
+    folder ? `New deck in ${folder}` : "New deck",
+    "One deck is one topic you are teaching yourself.",
+  );
   const form = document.createElement("form");
   const title = Object.assign(document.createElement("input"), {
     className: "big",
@@ -451,7 +454,11 @@ export function openNewDeck() {
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!title.value.trim()) return title.focus();
-    const { ok, data } = await post("/api/decks", { title: title.value.trim(), template: chosen });
+    const { ok, data } = await post("/api/decks", {
+      title: title.value.trim(),
+      template: chosen,
+      ...(folder ? { folder } : {}),
+    });
     if (!ok) return;
     close();
     location.hash = `#/deck/${data.slug}`;

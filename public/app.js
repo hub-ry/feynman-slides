@@ -369,7 +369,18 @@ $("homeTheme").onclick = cycleTheme;
 $("present").onclick = () => present(S.idx);
 $("helpBtn").onclick = toggleHelp;
 $("new").onclick = openNewDeck;
-$("homeNew").onclick = openNewDeck;
+$("homeNew").onclick = () => openNewDeck({ folder: currentFolder });
+$("homeNewFolder").onclick = async () => {
+  const name = prompt("New folder name (e.g. CS 251):");
+  if (!name?.trim()) return;
+  await fetch("/api/folders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+  currentFolder = name.trim();
+  await router();
+};
 $("toHome").onclick = () => go("#/");
 document.addEventListener("present-ended", () => paintAll());
 
@@ -389,6 +400,18 @@ $("renameDeck").onclick = async () => {
   S.deck.title = title.trim();
   $("deckTitle").textContent = S.deck.title;
   connect();
+};
+$("moveDeckFolder").onclick = async () => {
+  const { folders } = await fetch("/api/folders").then((r) => r.json()).catch(() => ({ folders: [] }));
+  const promptText = folders.length
+    ? `Move to folder (existing: ${folders.join(", ")}, or type a new one, or leave empty for no folder):`
+    : "Folder name (or leave empty for no folder):";
+  const chosen = prompt(promptText, S.deck.folder ?? "");
+  if (chosen === null) return;
+  const folder = chosen.trim() || null;
+  await api("/folder", { method: "POST", body: JSON.stringify({ folder }) });
+  S.deck.folder = folder ?? undefined;
+  emit("say", folder ? `moved to ${folder}` : "removed from folder");
 };
 $("deleteDeck").onclick = async () => {
   if (!confirm(`Delete "${S.deck.title}" and everything in it?`)) return;
@@ -434,37 +457,219 @@ async function load(next) {
   paintAll();
 }
 
-/** A card per deck: what slide one looks like, how far in you are, what is blocking it. */
-function paintHome(list) {
+let currentFolder = null;
+
+const getFolders = () =>
+  fetch("/api/folders")
+    .then((r) => r.json())
+    .then((d) => d.folders ?? [])
+    .catch(() => []);
+
+function makeFolderDropTarget(target, folderName) {
+  target.addEventListener("dragover", (e) => {
+    const types = [...(e.dataTransfer?.types ?? [])];
+    if (types.includes("application/x-deck") || types.includes("text/plain")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      target.classList.add("drop-target");
+    }
+  });
+  target.addEventListener("dragleave", (e) => {
+    if (!target.contains(e.relatedTarget)) target.classList.remove("drop-target");
+  });
+  target.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    target.classList.remove("drop-target");
+    const slug = e.dataTransfer.getData("application/x-deck") || e.dataTransfer.getData("text/plain");
+    if (!slug) return;
+    await fetch(`/api/deck/${slug}/folder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folder: folderName }),
+    });
+    await router();
+  });
+}
+
+function createDeckCard(d) {
+  const card = document.createElement("a");
+  card.className = "card";
+  card.href = `#/deck/${d.slug}`;
+  card.draggable = true;
+  card.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("application/x-deck", d.slug);
+    e.dataTransfer.setData("text/plain", d.slug);
+    e.dataTransfer.effectAllowed = "move";
+    card.classList.add("dragging");
+  });
+  card.addEventListener("dragend", () => {
+    card.classList.remove("dragging");
+    document.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
+  });
+
+  const shot = document.createElement("div");
+  shot.className = "shot";
+  const t = pick(S.templates, d.template);
+  shot.append(miniature(d.first ?? [], t, {
+    width: 260,
+    srcFor: (e) => `/api/deck/${d.slug}/images/${encodeURIComponent(e.src)}`,
+  }));
+  card.append(shot);
+
+  const titleDiv = Object.assign(document.createElement("div"), { className: "card-title" });
+  if (d.folder && !currentFolder) {
+    const tag = Object.assign(document.createElement("span"), {
+      className: "card-folder",
+      textContent: `📁 ${d.folder}`,
+      title: `Folder: ${d.folder}. Click to filter.`,
+    });
+    tag.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      currentFolder = d.folder;
+      router();
+    };
+    titleDiv.append(tag);
+  }
+  titleDiv.append(document.createTextNode(d.title));
+  card.append(titleDiv);
+
+  card.append(Object.assign(document.createElement("div"), {
+    className: "card-meta",
+    textContent: `${d.slides} slide${d.slides === 1 ? "" : "s"} · ${t.name} · ${when(d.updated)}`,
+  }));
+  if (d.blocking) {
+    card.append(Object.assign(document.createElement("span"), {
+      className: "card-gate",
+      textContent: `${d.blocking} to deal with`,
+    }));
+  }
+  return card;
+}
+
+/** A card per deck: organized by folder with drag-and-drop support. */
+function paintHome(list, folders) {
+  const titleEl = $("homeTitle");
+  const crumbEl = $("folderBreadcrumb");
+  if (currentFolder) {
+    titleEl.textContent = currentFolder;
+    crumbEl.hidden = false;
+    crumbEl.replaceChildren();
+    const backBtn = Object.assign(document.createElement("button"), {
+      className: "ghost small",
+      textContent: "← All decks",
+    });
+    backBtn.onclick = () => { currentFolder = null; router(); };
+    crumbEl.append(backBtn);
+  } else {
+    titleEl.textContent = "Your decks";
+    crumbEl.hidden = true;
+  }
+
+  const folderBar = $("homeFolders");
+  if (!folders.length) {
+    folderBar.hidden = true;
+  } else {
+    folderBar.hidden = false;
+    folderBar.replaceChildren();
+
+    const allChip = Object.assign(document.createElement("button"), {
+      className: "folder-chip" + (!currentFolder ? " on" : ""),
+      title: "View all decks (or drop here to remove from folder)",
+    });
+    allChip.innerHTML = `All decks <span class="count">${list.length}</span>`;
+    allChip.onclick = () => { currentFolder = null; router(); };
+    makeFolderDropTarget(allChip, null);
+    folderBar.append(allChip);
+
+    for (const f of folders) {
+      const count = list.filter((d) => d.folder === f).length;
+      const chip = Object.assign(document.createElement("button"), {
+        className: "folder-chip" + (currentFolder === f ? " on" : ""),
+        title: `Folder: ${f} (drop a deck here to file it)`,
+      });
+      const fLabel = document.createElement("span");
+      fLabel.textContent = `📁 ${f}`;
+      const fCount = Object.assign(document.createElement("span"), {
+        className: "count",
+        textContent: String(count),
+      });
+      chip.append(fLabel, fCount);
+      chip.onclick = () => { currentFolder = f; router(); };
+      makeFolderDropTarget(chip, f);
+
+      const delBtn = Object.assign(document.createElement("span"), {
+        className: "kill-folder",
+        innerHTML: "&times;",
+        title: `Delete folder "${f}"`,
+      });
+      delBtn.onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm(`Delete folder "${f}"? Decks will be moved to unfiled.`)) return;
+        await fetch("/api/folders/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: f }),
+        });
+        if (currentFolder === f) currentFolder = null;
+        await router();
+      };
+      chip.append(delBtn);
+      folderBar.append(chip);
+    }
+  }
+
   const grid = $("homeGrid");
   grid.replaceChildren();
-  $("homeEmpty").hidden = list.length > 0;
-  for (const d of list) {
-    const card = document.createElement("a");
-    card.className = "card";
-    card.href = `#/deck/${d.slug}`;
 
-    const shot = document.createElement("div");
-    shot.className = "shot";
-    const t = pick(S.templates, d.template);
-    shot.append(miniature(d.first ?? [], t, {
-      width: 260,
-      srcFor: (e) => `/api/deck/${d.slug}/images/${encodeURIComponent(e.src)}`,
-    }));
-    card.append(shot);
-
-    card.append(Object.assign(document.createElement("div"), { className: "card-title", textContent: d.title }));
-    card.append(Object.assign(document.createElement("div"), {
-      className: "card-meta",
-      textContent: `${d.slides} slide${d.slides === 1 ? "" : "s"} · ${t.name} · ${when(d.updated)}`,
-    }));
-    if (d.blocking) {
-      card.append(Object.assign(document.createElement("span"), {
-        className: "card-gate",
-        textContent: `${d.blocking} to deal with`,
-      }));
+  if (currentFolder) {
+    const visible = list.filter((d) => d.folder === currentFolder);
+    $("homeEmpty").hidden = visible.length > 0;
+    if (visible.length === 0) {
+      $("homeEmpty").textContent = `No decks in "${currentFolder}" yet. Drag decks onto this folder chip or click "New deck".`;
     }
-    grid.append(card);
+    for (const d of visible) grid.append(createDeckCard(d));
+    makeFolderDropTarget(grid, currentFolder);
+  } else if (folders.length > 0) {
+    $("homeEmpty").hidden = list.length > 0;
+    if (list.length === 0) {
+      $("homeEmpty").textContent = "No decks yet. A deck is one topic you are teaching yourself.";
+    }
+
+    for (const f of folders) {
+      const inFolder = list.filter((d) => d.folder === f);
+      if (!inFolder.length) continue;
+      const section = document.createElement("div");
+      section.className = "folder-section-drop";
+      const head = document.createElement("div");
+      head.className = "folder-section-head";
+      head.innerHTML = `<span class="folder-section-title">📁 ${f}</span><span class="folder-section-count">${inFolder.length} deck${inFolder.length === 1 ? "" : "s"}</span>`;
+      const subgrid = document.createElement("div");
+      subgrid.className = "grid";
+      for (const d of inFolder) subgrid.append(createDeckCard(d));
+      section.append(head, subgrid);
+      makeFolderDropTarget(section, f);
+      grid.append(section);
+    }
+
+    const unfiled = list.filter((d) => !d.folder);
+    if (unfiled.length || folders.some((f) => list.some((d) => d.folder === f))) {
+      const section = document.createElement("div");
+      section.className = "folder-section-drop";
+      const head = document.createElement("div");
+      head.className = "folder-section-head";
+      head.innerHTML = `<span class="folder-section-title">Decks</span><span class="folder-section-count">${unfiled.length} deck${unfiled.length === 1 ? "" : "s"}</span>`;
+      const subgrid = document.createElement("div");
+      subgrid.className = "grid";
+      for (const d of unfiled) subgrid.append(createDeckCard(d));
+      section.append(head, subgrid);
+      makeFolderDropTarget(section, null);
+      grid.append(section);
+    }
+  } else {
+    $("homeEmpty").hidden = list.length > 0;
+    $("homeEmpty").textContent = "No decks yet. A deck is one topic you are teaching yourself.";
+    for (const d of list) grid.append(createDeckCard(d));
   }
 }
 
@@ -483,7 +688,7 @@ const decks = () => fetch("/api/decks").then((r) => r.json());
 
 async function router() {
   const m = /^#\/deck\/([a-z0-9-]+)$/.exec(location.hash);
-  const list = await decks();
+  const [list, folders] = await Promise.all([decks(), getFolders()]);
   await loadTemplates();
 
   if (m && list.some((d) => d.slug === m[1])) {
@@ -496,7 +701,7 @@ async function router() {
   disconnect();
   S.slug = null;
   document.title = "feynman-slides";
-  paintHome(list);
+  paintHome(list, folders);
 }
 addEventListener("hashchange", router);
 

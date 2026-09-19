@@ -27,9 +27,19 @@
   </div>
   <div class="home-body">
     <div class="home-head">
-      <h1>Your decks</h1>
-      <button id="homeNew" class="primary">New deck</button>
+      <div class="home-title-wrap">
+        <h1 id="homeTitle">Your decks</h1>
+        <span id="folderBreadcrumb" class="folder-crumb" hidden></span>
+      </div>
+      <div class="home-actions">
+        <button id="homeNewFolder" class="ghost strong" title="New folder">
+          <svg viewBox="0 0 24 24"><path d="M3.5 6.5h5.5l2 2.5h9.5v9.5h-17z"/><path d="M12 11.5v5M9.5 14h5"/></svg>
+          New folder
+        </button>
+        <button id="homeNew" class="primary">New deck</button>
+      </div>
     </div>
+    <div id="homeFolders" class="folder-bar" hidden></div>
     <div id="homeGrid" class="grid"></div>
     <p id="homeEmpty" class="empty-note" hidden>
       No decks yet. A deck is one topic you are teaching yourself.
@@ -47,6 +57,7 @@
     </button>
     <div id="deckMenuList" class="menu" hidden>
       <button id="renameDeck">Rename deck</button>
+      <button id="moveDeckFolder">Move to folder</button>
       <button id="saveAsTemplate">Save as template</button>
       <hr>
       <button id="deleteDeck" class="danger">Delete deck</button>
