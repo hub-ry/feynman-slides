@@ -117,7 +117,7 @@ const TYPES: Record<string, string> = {
   ".mjs": "text/javascript; charset=utf-8", ".map": "application/json",
 };
 
-function sendFile(res: ServerResponse, path: string, root: string): void {
+function sendFile(res: ServerResponse, path: string, root: string, isHead = false): void {
   // Resolved and then checked, not just checked: `normalize` is what turns
   // `../../etc/passwd` into something a prefix test can actually see.
   const full = normalize(path);
@@ -125,8 +125,16 @@ function sendFile(res: ServerResponse, path: string, root: string): void {
     res.writeHead(404).end("not found");
     return;
   }
-  res.writeHead(200, { "content-type": TYPES[extname(full).toLowerCase()] ?? "application/octet-stream" });
-  res.end(readFileSync(full));
+  const bytes = readFileSync(full);
+  res.writeHead(200, {
+    "content-type": TYPES[extname(full).toLowerCase()] ?? "application/octet-stream",
+    "content-length": bytes.length,
+  });
+  if (isHead) {
+    res.end();
+  } else {
+    res.end(bytes);
+  }
 }
 
 // --- routes ---------------------------------------------------------------
@@ -134,15 +142,17 @@ function sendFile(res: ServerResponse, path: string, root: string): void {
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const p = decodeURIComponent(url.pathname);
+  const isGet = req.method === "GET";
+  const isHead = req.method === "HEAD";
 
-  if (req.method === "GET" && (p === "/" || p === "/index.html"))
-    return sendFile(res, join(PUBLIC, "index.html"), PUBLIC);
-  if (req.method === "GET" && p.startsWith("/templates/"))
-    return sendFile(res, join(templates.SHIPPED, p.slice("/templates/".length)), templates.SHIPPED);
-  if (req.method === "GET" && p.startsWith("/vendor/"))
-    return sendFile(res, join(VENDOR, p.slice("/vendor/".length)), VENDOR);
-  if (req.method === "GET" && !p.startsWith("/api/"))
-    return sendFile(res, join(PUBLIC, p.slice(1)), PUBLIC);
+  if ((isGet || isHead) && (p === "/" || p === "/index.html"))
+    return sendFile(res, join(PUBLIC, "index.html"), PUBLIC, isHead);
+  if ((isGet || isHead) && p.startsWith("/templates/"))
+    return sendFile(res, join(templates.SHIPPED, p.slice("/templates/".length)), templates.SHIPPED, isHead);
+  if ((isGet || isHead) && p.startsWith("/vendor/"))
+    return sendFile(res, join(VENDOR, p.slice("/vendor/".length)), VENDOR, isHead);
+  if ((isGet || isHead) && !p.startsWith("/api/"))
+    return sendFile(res, join(PUBLIC, p.slice(1)), PUBLIC, isHead);
 
   if (req.method === "GET" && p === "/api/decks") return json(res, 200, store.list());
   if (req.method === "POST" && p === "/api/decks") {
