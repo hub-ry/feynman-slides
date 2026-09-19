@@ -7,6 +7,9 @@
 // If an external model is rate-limited, times out, or unavailable, it seamlessly
 // falls back to the local heuristic critic so your editing flow never blocks.
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Slide, Source } from "./deck.ts";
@@ -574,11 +577,15 @@ export async function testCriticConnection(
         cliAvailable = true;
       } catch {}
 
-      if (process.env.ANTHROPIC_API_KEY || cliAvailable) {
+      const home = process.env.HOME || homedir();
+      const hasClaudeJson = existsSync(join(home, ".claude.json"));
+      const hasLocalBin = existsSync(join(home, ".local", "bin", "claude"));
+
+      if (process.env.ANTHROPIC_API_KEY || cliAvailable || hasClaudeJson || hasLocalBin) {
         items = heuristicReview(sampleSlide, [], true);
         return {
           ok: true,
-          message: `Claude AI is ready (via ${process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : "Claude CLI login"}).`,
+          message: `Claude AI is ready (via ${process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : hasClaudeJson ? "Claude CLI credentials" : "Claude CLI"}).`,
           findings: items.map((it, idx) => ({ ...it, id: `test-f${idx + 1}`, slideKey: "test" })),
         };
       } else {
