@@ -813,6 +813,7 @@ const KEYS = [
   { group: "Source material", key: "u", label: "Upload lecture slides", btn: "binUpload",
     run: () => { showBin(true); $("sourceFile").click(); } },
 
+  { group: "The deck", key: "h", label: "All decks", btn: "toHome", run: () => open("#/") },
   { group: "The deck", key: "e", label: "Export", btn: "export", run: () => doExport() },
   { group: "The deck", key: "z", mod: true, label: "Undo", show: "\u2318Z", run: () => undoOnce() },
   { group: "The deck", key: "\\", label: "Theme: system, light, dark", btn: "theme", run: () => cycleTheme() },
@@ -834,6 +835,9 @@ const matches = (k, e) => {
 };
 
 addEventListener("keydown", (e) => {
+  // The editor's single-letter keys belong to a slide. On the home page there
+  // is no slide, and N would otherwise delete-or-add into the last deck.
+  if (document.body.dataset.view === "home") return;
   const typing = editing || ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
 
   // Escape has to work mid-sentence, because it is what you reach for when the
@@ -984,10 +988,11 @@ const ICON = {
 function paintTheme(mode) {
   if (mode === "system") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = mode;
-  const b = $("theme");
-  b.innerHTML = ICON[mode];
-  b.title = `Theme: ${mode}`;
-  b.setAttribute("aria-label", `Theme: ${mode}. Click to change.`);
+  for (const b of [$("theme"), $("homeTheme")]) {
+    b.innerHTML = ICON[mode];
+    b.title = `Theme: ${mode}`;
+    b.setAttribute("aria-label", `Theme: ${mode}. Click to change.`);
+  }
   labelButtons();
 }
 
@@ -1006,8 +1011,14 @@ $("addImage").onclick = () => $("file").click();
 $("file").onchange = async (e) => { await addImageFile(e.target.files[0]); e.target.value = ""; };
 
 // --- decks ----------------------------------------------------------------
+//
+// Two views, one page: the home page listing your decks, and the editor. The
+// hash is the only routing there is - `#/` is home, `#/deck/<slug>` is a deck -
+// so back and reload land you where you were, and the picker, the logo and the
+// cards are all just links that set it.
 
 async function load(next) {
+  if (slug === next) return;
   slug = next;
   localStorage.setItem("deck", slug);
   const r = await (await fetch(`/api/deck/${slug}`)).json();
@@ -1018,29 +1029,99 @@ async function load(next) {
   paintAll();
 }
 
-async function decks(select) {
-  const list = await (await fetch("/api/decks")).json();
+/** Fill the picker, which is the in-editor shortcut between decks. */
+async function fillPicker(list) {
   const picker = $("picker");
   picker.replaceChildren();
   for (const d of list) {
     picker.append(Object.assign(document.createElement("option"), { value: d.slug, textContent: d.title }));
   }
-  const want = select ?? localStorage.getItem("deck");
-  const pick = list.find((d) => d.slug === want)?.slug ?? list[0]?.slug;
-  if (pick) { picker.value = pick; await load(pick); }
-  else gate(0);
 }
 
-$("picker").onchange = (e) => load(e.target.value);
-$("new").onclick = async () => {
+const decks = () => fetch("/api/decks").then((r) => r.json());
+
+async function createDeck() {
   const title = prompt("What are you teaching yourself?");
   if (!title?.trim()) return;
   const r = await fetch("/api/decks", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ title }),
   });
-  await decks((await r.json()).slug);
-};
+  open(`#/deck/${(await r.json()).slug}`);
+}
+
+/** A card per deck: the title, how far in you are, and what is blocking it. */
+function paintHome(list) {
+  const grid = $("homeGrid");
+  grid.replaceChildren();
+  $("homeEmpty").hidden = list.length > 0;
+  for (const d of list) {
+    const card = document.createElement("a");
+    card.className = "card";
+    card.href = `#/deck/${d.slug}`;
+
+    const thumb = document.createElement("div");
+    thumb.className = "thumb";
+    thumb.textContent = d.title.slice(0, 1).toUpperCase();
+
+    const title = document.createElement("div");
+    title.className = "card-title";
+    title.textContent = d.title;
+
+    const meta = document.createElement("div");
+    meta.className = "card-meta";
+    meta.textContent = `${d.slides} slide${d.slides === 1 ? "" : "s"} \u00b7 ${when(d.updated)}`;
+
+    card.append(thumb, title, meta);
+    if (d.blocking) {
+      const badge = document.createElement("span");
+      badge.className = "card-gate";
+      badge.textContent = `${d.blocking} to deal with`;
+      card.append(badge);
+    }
+    grid.append(card);
+  }
+}
+
+/** Coarse on purpose: the useful question is how stale a deck is, not when. */
+function when(ms) {
+  const mins = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days < 30 ? `${days}d ago` : new Date(ms).toLocaleDateString();
+}
+
+const open = (hash) => { location.hash = hash; };
+
+async function router() {
+  const m = /^#\/deck\/([a-z0-9-]+)$/.exec(location.hash);
+  const list = await decks();
+  await fillPicker(list);
+
+  if (m && list.some((d) => d.slug === m[1])) {
+    document.body.dataset.view = "editor";
+    $("picker").value = m[1];
+    await load(m[1]);
+    return;
+  }
+  document.body.dataset.view = "home";
+  stream?.close();
+  stream = null;
+  slug = null;
+  paintHome(list);
+}
+
+addEventListener("hashchange", router);
+
+$("picker").onchange = (e) => open(`#/deck/${e.target.value}`);
+$("toHome").onclick = () => open("#/");
+$("new").onclick = createDeck;
+$("homeNew").onclick = createDeck;
+$("homeTheme").onclick = cycleTheme;
+
 async function doExport() {
   if ($("export").disabled) return;
   const { ok, data } = await api("/export", { method: "POST" });
@@ -1051,4 +1132,13 @@ async function doExport() {
 }
 $("export").onclick = doExport;
 
-decks();
+// First load with no route: back to the deck you were last in, because that is
+// where you left off. Home is what you get when there is nothing to go back to.
+if (!location.hash) {
+  const last = localStorage.getItem("deck");
+  location.replace(last ? `#/deck/${last}` : "#/");
+}
+// Which view, before the first paint - the router has to await the deck list,
+// and a frame of the wrong view is a flash of a page you did not ask for.
+document.body.dataset.view = /^#\/deck\//.test(location.hash) ? "editor" : "home";
+router();

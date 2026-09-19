@@ -10,7 +10,7 @@
 // must never be able to cost you your slides.
 
 import {
-  readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, renameSync, rmSync,
+  readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, renameSync, rmSync, statSync,
 } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -34,11 +34,35 @@ const deckPath = (slug: string) => join(dir(slug), "deck.json");
 const statePath = (slug: string) => join(dir(slug), "critiques.json");
 export const imageDir = (slug: string) => join(dir(slug), "images");
 
-export function list(): { slug: string; title: string }[] {
+export type Card = {
+  slug: string;
+  title: string;
+  slides: number;
+  blocking: number;
+  updated: number;
+};
+
+/**
+ * Every deck, newest first.
+ *
+ * The counts are read here rather than on the home page, because a deck you
+ * cannot export is the one fact worth seeing before you open it.
+ */
+export function list(): Card[] {
   if (!existsSync(DECKS)) return [];
   return readdirSync(DECKS, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(deckPath(e.name)))
-    .map((e) => ({ slug: e.name, title: readDeck(e.name).title }));
+    .map((e) => {
+      const deck = readDeck(e.name);
+      return {
+        slug: e.name,
+        title: deck.title,
+        slides: deck.slides.length,
+        blocking: blocking(readState(e.name)).length,
+        updated: statSync(deckPath(e.name)).mtimeMs,
+      };
+    })
+    .sort((a, b) => b.updated - a.updated);
 }
 
 export function create(title: string): string {

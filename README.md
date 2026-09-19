@@ -20,6 +20,13 @@ npm install
 
 No API key. It reuses your `claude` CLI login through the Agent SDK.
 
+## Your decks
+
+A **deck** is one topic you are teaching yourself. The home page lists all of
+them - how many slides each has, how long since you touched it, and how many
+findings are holding its export. `H` from the editor, or the logo, takes you
+back to it; the deck you were last in is where a fresh window opens.
+
 ## The loop
 
 Build slides on a canvas: text boxes and images placed, dragged and resized
@@ -110,6 +117,7 @@ cannot come loose from the label advertising it.
 | `⌘D` | duplicate |
 | `Bksp` | delete the selection, `⌘Bksp` deletes the slide |
 | `S` `U` | open the bin, upload lecture slides |
+| `H` | back to your decks |
 | `E` | export |
 | `\` | theme: system, light, dark |
 | `⌘Z` | undo |

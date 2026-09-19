@@ -41,6 +41,59 @@ body {
   display: flex; flex-direction: column; overflow: hidden;
 }
 
+/* --- the home page ------------------------------------------------------ */
+/*
+   One view or the other, never both: the editor keeps its own layout and the
+   home page owns the whole window while it is up. */
+body[data-view="home"] > .titlebar,
+body[data-view="home"] > .toolbar,
+body[data-view="home"] > main { display: none; }
+body[data-view="editor"] > #home { display: none; }
+
+#home { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.home-bar {
+  display: flex; align-items: center; gap: .6rem; flex: 0 0 auto;
+  height: 52px; padding: 0 .75rem; background: var(--panel);
+  border-bottom: 1px solid var(--rule);
+}
+.wordmark { font-size: 15px; font-weight: 500; }
+.home-body { width: min(1040px, 100%); margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+.home-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1.5rem;
+}
+.home-head h1 { font-size: 26px; font-weight: 500; margin: 0; }
+.empty-note { color: var(--dim); }
+
+.grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.card {
+  position: relative; display: block; text-decoration: none; color: inherit;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
+  padding: .85rem; min-width: 0;
+}
+.card:hover { border-color: var(--sel); }
+.card:focus-visible { outline: 2px solid var(--sel); outline-offset: 2px; }
+/* A deck has no thumbnail until it is exported, so the initial stands in - it
+   is enough to tell two decks apart in a grid, which is all a thumb is for. */
+.thumb {
+  aspect-ratio: 16 / 9; border-radius: 6px; background: var(--sunk);
+  display: grid; place-items: center; margin-bottom: .7rem;
+  font-size: 30px; font-weight: 500; color: var(--faint);
+}
+.card-title {
+  font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-meta { font-size: 12.5px; color: var(--faint); margin-top: .15rem; }
+.card-gate {
+  position: absolute; top: 1.35rem; right: 1.35rem;
+  font-size: 11.5px; font-weight: 500; color: var(--error);
+  background: color-mix(in srgb, var(--error) 14%, var(--panel));
+  padding: .2rem .5rem; border-radius: 100px;
+}
+
 /* --- chrome ------------------------------------------------------------- */
 .titlebar, .toolbar {
   display: flex; align-items: center; gap: .3rem; flex: 0 0 auto;
@@ -54,8 +107,9 @@ body {
 
 .logo {
   width: 26px; height: 26px; border-radius: 5px; flex: 0 0 auto;
-  background: var(--sel); position: relative;
+  background: var(--sel); position: relative; padding: 0; border: 0;
 }
+button.logo:hover { background: var(--sel); filter: brightness(1.1); }
 .logo::after {
   content: ""; position: absolute; inset: 7px 5px; border-radius: 1px;
   background: var(--panel);
