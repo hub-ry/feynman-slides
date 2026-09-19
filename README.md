@@ -88,9 +88,35 @@ white in every theme - it is paper, and it is what you will export.
 
 ## Keys
 
-`T` new text box · double-click to edit · `Enter` edit the selection · arrows
-nudge, `shift` for ten · `backspace` delete · `cmd+Z` undo · paste an image
-straight onto the slide.
+Everything worth doing has a key, and the toolbar is the discoverable copy of
+that rather than the other way round: reaching for the mouse is paid for in
+attention you were spending on whether the slide is true.
+
+Press `?` for the list. It is generated from the same table that dispatches
+the keys, and the buttons take their tooltips from it too, so a shortcut
+cannot come loose from the label advertising it.
+
+| | |
+|---|---|
+| `N` | new slide |
+| `J` `K` | next, previous slide - arrows do this too when nothing is selected |
+| `T` | new text box |
+| `I` | insert image (or just paste one) |
+| `Tab` | select the next element, `shift` for the previous |
+| `Enter` | edit the selection, double-click does the same |
+| `Esc` | back to the slide from any field, again to deselect |
+| arrows | nudge the selection, `shift` for ten |
+| `1` `2` | Title, Normal |
+| `⌘D` | duplicate |
+| `Bksp` | delete the selection, `⌘Bksp` deletes the slide |
+| `S` `U` | open the bin, upload lecture slides |
+| `E` | export |
+| `\` | theme: system, light, dark |
+| `⌘Z` | undo |
+
+Single letters act, unmodified, and that is safe for one reason: you are never
+typing unless you asked to be. A text box takes keystrokes only after `Enter`
+or a double-click, and `Esc` is always the way back out of a field.
 
 ## Export
 

@@ -280,7 +280,8 @@ function gate(blocking) {
   $("gate").textContent = blocking ? `${blocking} unresolved` : "";
   $("export").title = blocking
     ? "Errors and jargon hold the export. Fix them, or reject them with a reason."
-    : "";
+    : "Export";
+  labelButtons();
 }
 
 function paintAll() { fit(); paintCanvas(); paintRail(); paintBin(); paintFindings(); }
@@ -765,35 +766,189 @@ canvas.addEventListener("focusout", (e) => {
 });
 
 // --- keyboard -------------------------------------------------------------
+//
+// The toolbar is the discoverable copy of this table, not the other way round.
+// Everything worth doing to a slide has a key, because the cost of reaching
+// for the mouse is paid in attention you were spending on whether the slide is
+// true.
+//
+// Single letters act, unmodified, and that is safe here for one reason: you
+// are never typing unless you asked to be. A text box takes keystrokes only
+// after Enter or a double-click, and every handler below bails while `typing`.
+//
+// KEYS is the only description of the keyboard. Dispatch reads it, the button
+// tooltips read it, and the help sheet is generated from it - so a shortcut
+// cannot come loose from the label that advertises it.
+
+const KEYS = [
+  { group: "Slides", key: "n", label: "New slide", btn: "addSlide", run: () => addSlide() },
+  // j and k mean nothing else, so they navigate whatever is selected. The
+  // arrows are the ones that have to yield: they belong to the selection when
+  // there is one, and to the deck when there is not.
+  { group: "Slides", key: "j", label: "Next slide", show: "J  /  \u2193", run: () => step(1) },
+  { group: "Slides", key: "k", label: "Previous slide", show: "K  /  \u2191", run: () => step(-1) },
+  { group: "Slides", key: "Backspace", mod: true, label: "Delete this slide", run: () => deleteSlide() },
+
+  { group: "On the slide", key: "t", label: "New text box", btn: "addText", run: () => addText() },
+  { group: "On the slide", key: "i", label: "Insert image", btn: "addImage", run: () => $("file").click() },
+  { group: "On the slide", key: "Tab", label: "Select next element", show: "Tab", run: (e) => cycleSel(e.shiftKey ? -1 : 1) },
+  { group: "On the slide", key: "Enter", label: "Edit the selection", when: () => elById(sel)?.type === "text",
+    run: () => { editing = sel; paintCanvas(); } },
+  { group: "On the slide", key: "Escape", label: "Back to the slide, then deselect",
+    run: () => { if (editing) stopEditing(); else { sel = null; paintCanvas(); } } },
+  { group: "On the slide", key: "d", mod: true, label: "Duplicate", when: () => sel, run: () => duplicateEl() },
+  { group: "On the slide", key: "Backspace", alias: "Delete", label: "Delete the selection",
+    when: () => sel, btn: "del", run: () => deleteEl() },
+  { group: "On the slide", keys: ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"],
+    label: "Nudge the selection, shift for ten", show: "\u2190 \u2191 \u2193 \u2192",
+    run: (e) => (sel ? nudge(e) : step(e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : -1)) },
+
+  { group: "Text", key: "1", label: "Make it a Title", btn: "asTitle",
+    when: () => elById(sel)?.type === "text", run: () => setRole("title") },
+  { group: "Text", key: "2", label: "Make it Normal", btn: "asBody",
+    when: () => elById(sel)?.type === "text", run: () => setRole("body") },
+
+  { group: "Source material", key: "s", label: "Open or close the bin", btn: "binToggle",
+    run: () => showBin($("binBody").hidden, true) },
+  { group: "Source material", key: "u", label: "Upload lecture slides", btn: "binUpload",
+    run: () => { showBin(true); $("sourceFile").click(); } },
+
+  { group: "The deck", key: "e", label: "Export", btn: "export", run: () => doExport() },
+  { group: "The deck", key: "z", mod: true, label: "Undo", show: "\u2318Z", run: () => undoOnce() },
+  { group: "The deck", key: "\\", label: "Theme: system, light, dark", btn: "theme", run: () => cycleTheme() },
+  { group: "The deck", key: "?", label: "This list", run: () => toggleHelp() },
+];
+
+/** How a binding is written on a button or in the help sheet. */
+function keyLabel(k) {
+  if (k.show) return k.show;
+  const name = { Backspace: "Bksp", Enter: "Enter", Escape: "Esc", Tab: "Tab" }[k.key] ?? k.key.toUpperCase();
+  return (k.mod ? "\u2318" : "") + name;
+}
+
+const matches = (k, e) => {
+  const want = k.keys ?? [k.key, k.alias].filter(Boolean);
+  if (!want.some((w) => e.key === w || e.key.toLowerCase() === w.toLowerCase())) return false;
+  // A modifier that the binding did not ask for belongs to the browser.
+  return Boolean(k.mod) === Boolean(e.metaKey || e.ctrlKey);
+};
 
 addEventListener("keydown", (e) => {
   const typing = editing || ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
 
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-    if (typing) return;
-    e.preventDefault(); undoOnce(); return;
+  // Escape has to work mid-sentence, because it is what you reach for when the
+  // sentence went wrong - and it is the way back to the slide from any field.
+  // Without this, `s` opens the bin, focus lands in the textarea, and every
+  // other key is swallowed as typing with no keyboard way out.
+  if (e.key === "Escape") {
+    if (editing) { e.preventDefault(); stopEditing(); return; }
+    const a = document.activeElement;
+    if (a && ["INPUT", "TEXTAREA"].includes(a.tagName)) { e.preventDefault(); a.blur(); return; }
   }
-  if (e.key === "Escape" && editing) { e.preventDefault(); stopEditing(); return; }
-  if (typing) return;
+  if (typing) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !editing) return;
+    return;
+  }
+  if (help.open && e.key !== "?" && e.key !== "Escape") return;
 
-  if (e.key === "t" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); addText(); return; }
-  if ((e.key === "Backspace" || e.key === "Delete") && sel) { e.preventDefault(); deleteEl(); return; }
-  if (e.key === "Enter" && sel && elById(sel)?.type === "text") {
-    e.preventDefault(); editing = sel; paintCanvas(); return;
-  }
-  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-    const el = elById(sel);
-    if (!el) return;
+  for (const k of KEYS) {
+    if (!matches(k, e)) continue;
+    if (k.when && !k.when()) continue;
     e.preventDefault();
-    const step = e.shiftKey ? 10 : 1;
-    snapshot();
-    if (e.key === "ArrowUp") el.y -= step;
-    if (e.key === "ArrowDown") el.y += step;
-    if (e.key === "ArrowLeft") el.x -= step;
-    if (e.key === "ArrowRight") el.x += step;
-    save(); paintCanvas(); paintRail();
+    k.run(e);
+    return;
   }
 });
+
+/** Move by one slide, stopping at either end rather than wrapping. */
+const step = (dir) => go(Math.min(Math.max(idx + dir, 0), deck.slides.length - 1));
+
+function nudge(e) {
+  const el = elById(sel);
+  if (!el) return;
+  const by = e.shiftKey ? 10 : 1;
+  snapshot();
+  if (e.key === "ArrowUp") el.y -= by;
+  if (e.key === "ArrowDown") el.y += by;
+  if (e.key === "ArrowLeft") el.x -= by;
+  if (e.key === "ArrowRight") el.x += by;
+  save(); paintCanvas(); paintRail();
+}
+
+/** Tab through the elements on this slide, so the mouse is never the only way in. */
+function cycleSel(dir) {
+  const els = slide()?.els ?? [];
+  if (!els.length) return;
+  const at = els.findIndex((el) => el.id === sel);
+  sel = els[(at + dir + els.length) % els.length].id;
+  paintCanvas();
+}
+
+function duplicateEl() {
+  const el = elById(sel);
+  if (!el) return;
+  snapshot();
+  const copy = { ...el, id: uid(), x: el.x + 16, y: el.y + 16 };
+  slide().els.push(copy);
+  sel = copy.id;
+  save(); paintCanvas(); paintRail();
+}
+
+// --- the help sheet -------------------------------------------------------
+//
+// Keyboard-first only works if the keys are findable, and a README is not
+// findable while your hands are on the keyboard.
+
+const help = document.createElement("dialog");
+help.id = "help";
+addEventListener("keydown", (e) => {
+  if (help.open && e.key === "Escape") { e.preventDefault(); help.close(); }
+});
+
+function buildHelp() {
+  help.replaceChildren();
+  const h = document.createElement("h2");
+  h.textContent = "Keys";
+  help.append(h);
+  for (const group of [...new Set(KEYS.map((k) => k.group))]) {
+    const sec = document.createElement("section");
+    const t = document.createElement("h3");
+    t.textContent = group;
+    sec.append(t);
+    for (const k of KEYS.filter((x) => x.group === group)) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const kbd = document.createElement("kbd");
+      kbd.textContent = keyLabel(k);
+      const label = document.createElement("span");
+      label.textContent = k.label;
+      row.append(kbd, label);
+      sec.append(row);
+    }
+    help.append(sec);
+  }
+  const foot = document.createElement("p");
+  foot.className = "foot";
+  foot.textContent = "Esc closes this.";
+  help.append(foot);
+  document.body.append(help);
+}
+
+const toggleHelp = () => (help.open ? help.close() : help.showModal());
+
+// Every button that has a key says so, from the same table - a tooltip is
+// where you look when you already suspect there is a faster way.
+function labelButtons() {
+  for (const k of KEYS) {
+    const b = k.btn && $(k.btn);
+    if (!b) continue;
+    const base = (b.title || k.label).replace(/\s*\([^)]*\)$/, "");
+    b.title = `${base}  (${keyLabel(k)})`;
+  }
+}
+
+buildHelp();
+labelButtons();
 
 addEventListener("paste", async (e) => {
   if (editing || ["TEXTAREA", "INPUT"].includes(document.activeElement?.tagName)) return;
@@ -833,16 +988,18 @@ function paintTheme(mode) {
   b.innerHTML = ICON[mode];
   b.title = `Theme: ${mode}`;
   b.setAttribute("aria-label", `Theme: ${mode}. Click to change.`);
+  labelButtons();
 }
 
 let theme = localStorage.getItem("theme") ?? "system";
 if (!THEMES.includes(theme)) theme = "system";
 paintTheme(theme);
-$("theme").onclick = () => {
+function cycleTheme() {
   theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
   localStorage.setItem("theme", theme);
   paintTheme(theme);
-};
+}
+$("theme").onclick = cycleTheme;
 
 $("addSlide").onclick = addSlide;
 $("addImage").onclick = () => $("file").click();
@@ -884,12 +1041,14 @@ $("new").onclick = async () => {
   });
   await decks((await r.json()).slug);
 };
-$("export").onclick = async () => {
+async function doExport() {
+  if ($("export").disabled) return;
   const { ok, data } = await api("/export", { method: "POST" });
   const s = $("status");
   s.className = "status";
   if (ok) s.textContent = `wrote ${data.path}`;
   else { s.textContent = data.error ?? "export refused"; gate(data.findings?.length ?? 1); }
-};
+}
+$("export").onclick = doExport;
 
 decks();
