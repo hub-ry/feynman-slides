@@ -226,6 +226,44 @@ button.logo:hover { background: var(--sel); filter: brightness(1.1); }
   padding: .2rem .5rem; border-radius: 100px;
 }
 
+/* Card menu button (3 dots) */
+.card-menu-btn {
+  position: absolute; top: .5rem; right: .5rem; width: 26px; height: 26px;
+  border-radius: 50%; opacity: 0; transition: opacity .12s ease;
+  background: var(--panel); border: 1px solid var(--rule);
+  display: flex; align-items: center; justify-content: center; color: var(--dim);
+  z-index: 2; padding: 0;
+}
+.card:hover .card-menu-btn, .card-menu-btn.open { opacity: 1; }
+.card-menu-btn:hover { color: var(--ink); background: var(--hover); border-color: var(--dim); }
+.card-menu-btn svg { width: 14px; height: 14px; }
+
+/* Move dialog (Google Drive style) */
+.move-list {
+  display: flex; flex-direction: column; gap: .3rem;
+  max-height: 280px; overflow-y: auto; margin: .8rem 0 1.2rem;
+  border: 1px solid var(--rule); border-radius: 8px; padding: .4rem;
+  background: var(--bg);
+}
+.move-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .5rem .75rem; border-radius: 6px; cursor: pointer;
+  font-size: 13.5px; font-weight: 500; color: var(--ink);
+  transition: background .1s ease;
+}
+.move-item:hover { background: var(--hover); }
+.move-item.on {
+  background: var(--active); color: var(--sel); font-weight: 600;
+}
+.move-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+}
+
+/* Canvas cursor when text placement is armed */
+#canvas.placing-text {
+  cursor: crosshair !important;
+}
+
 /* --- chrome rows --------------------------------------------------------- */
 .titlebar, .toolbar { display: flex; align-items: center; gap: .3rem; flex: 0 0 auto; background: var(--panel); }
 .titlebar { height: 52px; gap: .5rem; padding: 0 .9rem; }

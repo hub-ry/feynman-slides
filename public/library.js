@@ -466,3 +466,65 @@ export function openNewDeck({ folder } = {}) {
   body.append(form);
   title.focus();
 }
+
+// --- move deck dialog (Google Drive style) ---------------------------------
+
+export async function openMoveDialog(slug, deckTitle, currentFolder, onDone) {
+  const { folders } = await fetch("/api/folders").then((r) => r.json()).catch(() => ({ folders: [] }));
+  const { body, close } = modal(`Move "${deckTitle}"`, "Choose a destination folder for this deck.");
+
+  const list = document.createElement("div");
+  list.className = "move-list";
+
+  let selectedFolder = currentFolder ?? null;
+
+  const renderItems = () => {
+    list.replaceChildren();
+
+    const rootItem = document.createElement("div");
+    rootItem.className = "move-item" + (selectedFolder === null ? " on" : "");
+    rootItem.innerHTML = `<span>📂 <em>No folder (unfiled)</em></span>`;
+    rootItem.onclick = () => { selectedFolder = null; renderItems(); };
+    list.append(rootItem);
+
+    for (const f of folders) {
+      const item = document.createElement("div");
+      item.className = "move-item" + (selectedFolder === f ? " on" : "");
+      item.innerHTML = `<span>📁 ${f}</span>`;
+      item.onclick = () => { selectedFolder = f; renderItems(); };
+      list.append(item);
+    }
+  };
+  renderItems();
+  body.append(list);
+
+  const actions = document.createElement("div");
+  actions.className = "move-actions";
+
+  const newBtn = button("+ New folder", "ghost small", async () => {
+    const name = prompt("Folder name:");
+    if (!name?.trim()) return;
+    const n = name.trim();
+    if (!folders.includes(n)) folders.push(n);
+    await fetch("/api/folders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: n }),
+    });
+    selectedFolder = n;
+    renderItems();
+  });
+
+  const moveBtn = button("Move here", "primary", async () => {
+    await fetch(`/api/deck/${slug}/folder`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ folder: selectedFolder }),
+    });
+    close();
+    onDone?.(selectedFolder);
+  });
+
+  actions.append(newBtn, moveBtn);
+  body.append(actions);
+}

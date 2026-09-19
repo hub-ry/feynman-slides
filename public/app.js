@@ -13,7 +13,7 @@ import { paintRail, scaleRail } from "./rail.js";
 import { paintFormat, applyMark, toggleList } from "./format.js";
 import { paintFindings, connect, disconnect } from "./critic.js";
 import { paintBin, wireBin, showBin, binOpen } from "./bin.js";
-import { openLayouts, openTemplates, openNewDeck } from "./library.js";
+import { openLayouts, openTemplates, openNewDeck, openMoveDialog } from "./library.js";
 import { present } from "./present.js";
 import { miniature } from "./preview.js";
 import { pick } from "./theme.js";
@@ -401,17 +401,11 @@ $("renameDeck").onclick = async () => {
   $("deckTitle").textContent = S.deck.title;
   connect();
 };
-$("moveDeckFolder").onclick = async () => {
-  const { folders } = await fetch("/api/folders").then((r) => r.json()).catch(() => ({ folders: [] }));
-  const promptText = folders.length
-    ? `Move to folder (existing: ${folders.join(", ")}, or type a new one, or leave empty for no folder):`
-    : "Folder name (or leave empty for no folder):";
-  const chosen = prompt(promptText, S.deck.folder ?? "");
-  if (chosen === null) return;
-  const folder = chosen.trim() || null;
-  await api("/folder", { method: "POST", body: JSON.stringify({ folder }) });
-  S.deck.folder = folder ?? undefined;
-  emit("say", folder ? `moved to ${folder}` : "removed from folder");
+$("moveDeckFolder").onclick = () => {
+  openMoveDialog(S.slug, S.deck.title, S.deck.folder, (next) => {
+    S.deck.folder = next ?? undefined;
+    emit("say", next ? `moved to ${next}` : "removed from folder");
+  });
 };
 $("deleteDeck").onclick = async () => {
   if (!confirm(`Delete "${S.deck.title}" and everything in it?`)) return;
@@ -506,6 +500,23 @@ function createDeckCard(d) {
     card.classList.remove("dragging");
     document.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
   });
+
+  const menuBtn = document.createElement("button");
+  menuBtn.className = "card-menu-btn";
+  menuBtn.title = "Move to folder";
+  menuBtn.setAttribute("aria-label", `Move ${d.title}`);
+  menuBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>`;
+  menuBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openMoveDialog(d.slug, d.title, d.folder, () => router());
+  };
+  card.append(menuBtn);
+
+  card.oncontextmenu = (e) => {
+    e.preventDefault();
+    openMoveDialog(d.slug, d.title, d.folder, () => router());
+  };
 
   const shot = document.createElement("div");
   shot.className = "shot";
