@@ -7,6 +7,7 @@
 // is the only real subtlety in here.
 
 import { FONT, css } from "./type.js";
+import { pdfToSources } from "./pdf-text.js";
 
 const W = 960, H = 540;
 const $ = (id) => document.getElementById(id);
@@ -95,14 +96,24 @@ function undoOnce() {
 function fit() {
   const wrap = stage.parentElement;
   const cs = getComputedStyle(wrap);
+  const binEl = document.querySelector(".bin");
   const availW = wrap.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const bin = document.querySelector(".bin").offsetHeight;
-  const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - bin - 14;
-  scale = Math.max(0.2, Math.min(availW / W, availH / H));
-  stage.style.transform = `scale(${scale})`;
-  // The stage is 960x540 in layout no matter how it is drawn, so its unscaled
-  // height would push the bin off screen. Collapse the difference.
-  stage.style.marginBottom = `${H * scale - H}px`;
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+
+  // Twice, because the two measurements depend on each other: the bin is as
+  // wide as the drawn slide, and how tall it wraps to decides how big the
+  // slide can be. One extra pass settles it; more would not move.
+  for (let pass = 0; pass < 2; pass++) {
+    const availH = wrap.clientHeight - padY - binEl.offsetHeight - 14;
+    scale = Math.max(0.2, Math.min(availW / W, availH / H));
+    stage.style.transform = `scale(${scale})`;
+    // The stage is 960x540 in layout no matter how it is drawn, so its
+    // unscaled height would push the bin off screen. Collapse the difference.
+    stage.style.marginBottom = `${H * scale - H}px`;
+    // The bin is source material FOR the slide above it, so it lines up with
+    // that slide rather than with the window.
+    binEl.style.width = `${W * scale}px`;
+  }
 }
 addEventListener("resize", fit);
 
@@ -303,6 +314,13 @@ function paintBin() {
     const kill = document.createElement("button");
     kill.className = "kill"; kill.textContent = "\u00d7"; kill.title = "Remove";
     kill.onclick = () => removeSource(src.id);
+    if (src.label) {
+      const tag = document.createElement("span");
+      tag.className = "tag-src";
+      tag.textContent = src.label;
+      tag.title = src.label;
+      row.append(tag);
+    }
     row.append(ta, kill);
     list.append(row);
   }
@@ -314,20 +332,39 @@ function removeSource(id) {
   save(); paintBin(); firmReview();
 }
 
-function addSource(text) {
+function addSource(text, label) {
   if (!text.trim()) return;
   snapshot();
-  (deck.sources ??= []).push({ id: uid(), text: text.trim() });
+  (deck.sources ??= []).push({ id: uid(), text: text.trim(), ...(label ? { label } : {}) });
   save(); paintBin(); firmReview();
 }
 
-$("binToggle").onclick = () => {
-  const open = $("binBody").hidden;
+/**
+ * Many sources at once, from one upload.
+ *
+ * Deliberately one snapshot and one re-read for the whole file rather than per
+ * page: a 40-page lecture deck must be one undo, and it must not queue forty
+ * critic passes over a deck that has not changed.
+ */
+function addSources(entries) {
+  if (!entries.length) return;
+  snapshot();
+  deck.sources ??= [];
+  for (const e of entries) deck.sources.push({ id: uid(), text: e.text.trim(), label: e.label });
+  save(); paintBin(); firmReview();
+}
+
+// Whether the bin is open is remembered: it is where your lecture material
+// lives, and someone working from a PDF has it open for the whole session.
+function showBin(open, focus = false) {
   $("binBody").hidden = !open;
   $("binToggle").setAttribute("aria-expanded", String(open));
+  localStorage.setItem("bin", open ? "open" : "shut");
   fit();
-  if (open) $("binAdd").focus();
-};
+  if (open && focus) $("binAdd").focus();
+}
+$("binToggle").onclick = () => showBin($("binBody").hidden, true);
+showBin(localStorage.getItem("bin") === "open");
 
 $("binAdd").onkeydown = (e) => {
   // Enter adds, shift+enter is a newline - the bin is a list of things, and
@@ -339,6 +376,87 @@ $("binAdd").onkeydown = (e) => {
   }
 };
 $("binAdd").onblur = () => { addSource($("binAdd").value); $("binAdd").value = ""; };
+
+// --- uploading lecture slides ---------------------------------------------
+//
+// The thing you are studying from is almost always a PDF your professor
+// handed you, so that is the case this is built around: one page in, one
+// source out, labelled with where it came from.
+//
+// An image dropped here goes onto the SLIDE instead. Putting it in the bin
+// would be theatre - the critic reads the bin as text, and nothing here does
+// OCR, so it would sit there looking like source material while contributing
+// nothing.
+
+const say = (msg, busy = false) => {
+  const s = $("status");
+  s.className = "status" + (busy ? " busy" : "");
+  s.textContent = msg;
+};
+
+async function ingest(files) {
+  const list = [...files];
+  const pdfs = list.filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+  const imgs = list.filter((f) => f.type.startsWith("image/"));
+  const skipped = list.length - pdfs.length - imgs.length;
+
+  for (const f of pdfs) {
+    try {
+      say(`reading ${f.name}`, true);
+      const { sources, pages } = await pdfToSources(f, (n, total) =>
+        say(`reading ${f.name} - page ${n} of ${total}`, true),
+      );
+      addSources(sources);
+      // A deck that yields nothing is a scan, and silence would look like a
+      // bug rather than the one thing this cannot do.
+      say(
+        sources.length
+          ? `${f.name}: added ${sources.length} of ${pages} pages`
+          : `${f.name}: no text found - it looks scanned, so its pages are images`,
+      );
+    } catch (err) {
+      say(`could not read ${f.name}: ${err.message ?? err}`);
+    }
+  }
+
+  for (const f of imgs) {
+    await addImageFile(f);
+    say(`${f.name} added to the slide - the bin holds text the critic can read`);
+  }
+  if (skipped) say(`${skipped} file${skipped > 1 ? "s" : ""} skipped - PDFs and images only`);
+}
+
+$("binUpload").onclick = () => $("sourceFile").click();
+$("sourceFile").onchange = async (e) => { await ingest(e.target.files); e.target.value = ""; };
+
+// The whole panel is the target, not just the button - you are dragging a file
+// at a box, and the button is the smallest part of the box.
+const drop = $("binDrop");
+const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+for (const type of ["dragenter", "dragover"]) {
+  drop.addEventListener(type, (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    drop.classList.add("over");
+  });
+}
+// dragleave fires when crossing onto a CHILD of the drop zone, so the
+// highlight has to survive a pointer that is still inside it.
+drop.addEventListener("dragleave", (e) => {
+  if (!drop.contains(e.relatedTarget)) drop.classList.remove("over");
+});
+drop.addEventListener("drop", async (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  drop.classList.remove("over");
+  await ingest(e.dataTransfer.files);
+});
+// Dropping a file anywhere else would otherwise navigate away from the editor
+// and lose whatever was not yet saved.
+for (const type of ["dragover", "drop"]) {
+  addEventListener(type, (e) => { if (hasFiles(e) && !drop.contains(e.target)) e.preventDefault(); });
+}
 
 // --- findings pane --------------------------------------------------------
 
@@ -695,6 +813,38 @@ $("asTitle").onclick = () => setRole("title");
 $("asBody").onclick = () => setRole("body");
 $("del").onclick = deleteEl;
 $("addText").onclick = addText;
+// --- theme ----------------------------------------------------------------
+//
+// Three states, not two: following the system is a real choice and the one
+// most people want, so the toggle cycles through it rather than forcing a
+// side the first time you touch it.
+
+const THEMES = ["system", "light", "dark"];
+const ICON = {
+  system: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M8 20h8"/></svg>',
+  light: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>',
+  dark: '<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg>',
+};
+
+function paintTheme(mode) {
+  if (mode === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = mode;
+  const b = $("theme");
+  b.innerHTML = ICON[mode];
+  b.title = `Theme: ${mode}`;
+  b.setAttribute("aria-label", `Theme: ${mode}. Click to change.`);
+}
+
+let theme = localStorage.getItem("theme") ?? "system";
+if (!THEMES.includes(theme)) theme = "system";
+paintTheme(theme);
+$("theme").onclick = () => {
+  theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  localStorage.setItem("theme", theme);
+  paintTheme(theme);
+};
+
+$("addSlide").onclick = addSlide;
 $("addImage").onclick = () => $("file").click();
 $("file").onchange = async (e) => { await addImageFile(e.target.files[0]); e.target.value = ""; };
 

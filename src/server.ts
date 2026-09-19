@@ -1,5 +1,6 @@
-// A local server, no framework. The only runtime dependency is the Agent SDK,
-// which is the one thing here that could not have been written by hand.
+// A local server, no framework. Two runtime dependencies, both things that
+// could not reasonably have been written by hand: the Agent SDK, and pdf.js
+// for reading the lecture PDFs you drop in the bin.
 //
 // The browser cannot talk to the Agent SDK, so the critic session lives here
 // and findings come back over SSE. One session per open deck, started lazily,
@@ -14,7 +15,12 @@ import { type Deck, slideKey, uid } from "./deck.ts";
 import * as store from "./store.ts";
 import { exportDeck, Blocked } from "./export.ts";
 
-const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const PUBLIC = join(ROOT, "public");
+// pdf.js is served out of node_modules rather than copied into public/ or
+// pulled from a CDN: the extraction has to work with no network, because the
+// rest of this tool does.
+const VENDOR = join(ROOT, "node_modules", "pdfjs-dist", "build");
 
 type Live = { critic: CriticSession; clients: Set<ServerResponse>; reviewing: Set<string> };
 const live = new Map<string, Live>();
@@ -106,6 +112,7 @@ const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
   ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+  ".mjs": "text/javascript; charset=utf-8", ".map": "application/json",
 };
 
 function sendFile(res: ServerResponse, path: string, root: string): void {
@@ -128,6 +135,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (req.method === "GET" && (p === "/" || p === "/index.html"))
     return sendFile(res, join(PUBLIC, "index.html"), PUBLIC);
+  if (req.method === "GET" && p.startsWith("/vendor/"))
+    return sendFile(res, join(VENDOR, p.slice("/vendor/".length)), VENDOR);
   if (req.method === "GET" && !p.startsWith("/api/"))
     return sendFile(res, join(PUBLIC, p.slice(1)), PUBLIC);
 

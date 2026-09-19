@@ -40,6 +40,18 @@ does not divide neatly, and the definition you pasted while writing slide 2 is
 exactly what the critic needs on slide 9. Every slide is checked against all of
 it.
 
+**Upload the deck your professor handed you.** Drop a PDF on the bin, or use
+*Upload lecture slides*, and each page becomes one entry labelled with where it
+came from - `lecture-04 p12`. The critic is shown those labels, so a finding
+can tell you *which* slide of the lecture contradicts you rather than only that
+something does.
+
+The text is pulled out in the browser, so the file never leaves your machine
+and there is no build step for it. A scanned PDF has no text to pull, and says
+so instead of filling the bin with blank pages. An image dropped on the bin
+goes onto the slide instead: nothing here does OCR, so a picture in the bin
+would look like source material while contributing nothing.
+
 Leave the bin empty and the critic falls back on its own knowledge, labelling
 every finding `knowledge` so you can tell when it is arguing with your
 professor's notation rather than with you.
@@ -67,6 +79,12 @@ restart.
 
 A one-click dismiss would not be a forcing function. Writing down why a
 correction is wrong is the same exercise the deck is for.
+
+## Light and dark
+
+The theme button cycles **system, light, dark** and remembers which. System is
+the default and a real third state, not a fallback. The slide itself stays
+white in every theme - it is paper, and it is what you will export.
 
 ## Keys
 

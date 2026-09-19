@@ -278,6 +278,8 @@ function bin(sources: Source[]): string {
   return (
     "SOURCE BIN for this deck - check them against ALL of it, not just the part\n" +
     "that looks like this slide. Any entry may cover any slide.\n\n" +
-    sources.map((s, i) => `--- source ${i + 1} ---\n${s.text.trim()}`).join("\n\n")
+    sources
+      .map((s, i) => `--- source ${i + 1}${s.label ? ` (${s.label})` : ""} ---\n${s.text.trim()}`)
+      .join("\n\n")
   );
 }

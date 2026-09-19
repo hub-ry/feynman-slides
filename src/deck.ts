@@ -51,6 +51,12 @@ export type Slide = {
 export type Source = {
   id: string;
   text: string;
+  /**
+   * Where it came from - "lecture-04.pdf p12" for an upload, absent when you
+   * typed it. Shown to the critic so a finding can say which slide of your
+   * professor's deck contradicts you, rather than just that something does.
+   */
+  label?: string;
 };
 
 export type Deck = {
