@@ -193,6 +193,133 @@ function mountEditor(t) {
     railTimer = setTimeout(() => emit("rail"), 400);
     emit("selection");
   };
+
+  editor.onkeydown = (e) => {
+    const isMod = e.metaKey || e.ctrlKey;
+
+    // Formatting shortcuts: Cmd+B (bold), Cmd+I (italic), Cmd+U (highlight)
+    if (isMod && (e.key === "b" || e.key === "B" || e.key === "i" || e.key === "I" || e.key === "u" || e.key === "U")) {
+      e.preventDefault();
+      const wrapMark = (e.key === "b" || e.key === "B") ? "**" : (e.key === "i" || e.key === "I") ? "*" : "==";
+      const start = editor.selectionStart, end = editor.selectionEnd;
+      const val = editor.value;
+      const selText = val.slice(start, end);
+      const isWrapped = selText.startsWith(wrapMark) && selText.endsWith(wrapMark) && selText.length >= wrapMark.length * 2;
+
+      if (isWrapped) {
+        const unwrapped = selText.slice(wrapMark.length, selText.length - wrapMark.length);
+        editor.value = val.slice(0, start) + unwrapped + val.slice(end);
+        editor.setSelectionRange(start, start + unwrapped.length);
+      } else {
+        const wrapped = `${wrapMark}${selText}${wrapMark}`;
+        editor.value = val.slice(0, start) + wrapped + val.slice(end);
+        if (start === end) {
+          editor.setSelectionRange(start + wrapMark.length, start + wrapMark.length);
+        } else {
+          editor.setSelectionRange(start, start + wrapped.length);
+        }
+      }
+      el.text = editor.value;
+      save();
+      schedulePause();
+      emit("selection");
+      return;
+    }
+
+    // Tab / Shift+Tab for nested bullet indentation
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const val = editor.value;
+      const start = editor.selectionStart, end = editor.selectionEnd;
+      const lineStart = val.lastIndexOf("\n", start - 1) + 1;
+      const nextNl = val.indexOf("\n", end);
+      const lineEnd = nextNl === -1 ? val.length : nextNl;
+
+      const before = val.slice(0, lineStart);
+      const chunk = val.slice(lineStart, lineEnd);
+      const after = val.slice(lineEnd);
+
+      if (e.shiftKey) {
+        // Shift+Tab: Outdent
+        let removedFirst = 0;
+        const outdented = chunk.split("\n").map((line, idx) => {
+          if (line.startsWith("  ")) {
+            if (idx === 0) removedFirst = 2;
+            return line.slice(2);
+          } else if (line.startsWith(" ")) {
+            if (idx === 0) removedFirst = 1;
+            return line.slice(1);
+          }
+          return line;
+        }).join("\n");
+
+        editor.value = before + outdented + after;
+        const newStart = Math.max(lineStart, start - removedFirst);
+        const newEnd = Math.max(newStart, end - (chunk.length - outdented.length));
+        editor.setSelectionRange(newStart, newEnd);
+      } else {
+        // Tab: Indent
+        const indented = chunk.split("\n").map((line) => "  " + line).join("\n");
+        editor.value = before + indented + after;
+        editor.setSelectionRange(start + 2, end + (indented.length - chunk.length));
+      }
+
+      el.text = editor.value;
+      save();
+      schedulePause();
+      emit("selection");
+      return;
+    }
+
+    // Enter: auto-continue or outdent bullet
+    if (e.key === "Enter" && !e.shiftKey) {
+      const val = editor.value;
+      const pos = editor.selectionStart;
+      const lineStart = val.lastIndexOf("\n", pos - 1) + 1;
+      const currentLine = val.slice(lineStart, pos);
+
+      const bulletMatch = /^(\s*)([-*•◦▪–])\s*(.*)$/.exec(currentLine);
+      const numberMatch = !bulletMatch && /^(\s*)(\d+)[.)]\s*(.*)$/.exec(currentLine);
+      const match = bulletMatch || numberMatch;
+
+      if (match) {
+        const [_, indent, marker, content] = match;
+        // If empty bullet line, outdent or clear
+        if (!content.trim()) {
+          e.preventDefault();
+          if (indent.length >= 2) {
+            const newIndent = indent.slice(2);
+            const newLine = `${newIndent}${marker} `;
+            editor.value = val.slice(0, lineStart) + newLine + val.slice(pos);
+            const newPos = lineStart + newLine.length;
+            editor.setSelectionRange(newPos, newPos);
+          } else {
+            editor.value = val.slice(0, lineStart) + val.slice(pos);
+            editor.setSelectionRange(lineStart, lineStart);
+          }
+          el.text = editor.value;
+          save();
+          schedulePause();
+          emit("selection");
+          return;
+        }
+
+        // Non-empty bullet: auto-continue on next line
+        e.preventDefault();
+        const nextMarker = bulletMatch ? marker : `${parseInt(marker, 10) + 1}.`;
+        const insert = `\n${indent}${nextMarker} `;
+        editor.value = val.slice(0, pos) + insert + val.slice(pos);
+        const nextPos = pos + insert.length;
+        editor.setSelectionRange(nextPos, nextPos);
+        el.text = editor.value;
+        save();
+        schedulePause();
+        emit("selection");
+        return;
+      }
+    }
+  };
+
   editor.onblur = () => stopEditing();
   // Escape is deliberately NOT handled here. It bubbles to the one handler in
   // app.js, which closes the box on the first press and clears the selection

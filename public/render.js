@@ -42,7 +42,7 @@ function inline(text, accent) {
     .join("");
 }
 
-const BULLET = /^(\s*)([-*•])\s+(.*)$/;
+const BULLET = /^(\s*)([-*•◦▪–])\s+(.*)$/;
 const NUMBER = /^(\s*)(\d+)[.)]\s+(.*)$/;
 
 /**
@@ -61,11 +61,13 @@ export function textHtml(text, accent = "#1a73e8") {
       const n = !b && NUMBER.exec(raw);
       const hit = b || n;
       if (hit) {
-        const depth = Math.min(2, Math.floor(hit[1].length / 2));
-        const mark = b ? "•" : `${n[2]}.`;
+        const depth = Math.min(4, Math.floor(hit[1].length / 2));
+        const mark = b ? (depth === 0 ? "•" : depth === 1 ? "◦" : depth === 2 ? "▪" : "–") : `${n[2]}.`;
+        const indentEm = depth * 1.5;
+        const opacity = depth > 0 ? 0.72 : 0.88;
         return (
-          `<div class="li" style="display:flex;gap:.5em;margin-left:${depth * 1.4}em">` +
-          `<span class="bullet" style="flex:0 0 auto;opacity:.75">${mark}</span>` +
+          `<div class="li depth-${depth}" style="display:flex;gap:.5em;margin-left:${indentEm}em">` +
+          `<span class="bullet" style="flex:0 0 auto;opacity:${opacity};font-size:${depth > 0 ? '0.92em' : '1em'}">${mark}</span>` +
           `<span style="flex:1 1 auto;min-width:0">${inline(hit[3], accent) || "&nbsp;"}</span></div>`
         );
       }
