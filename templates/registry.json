@@ -1,0 +1,66 @@
+{
+  "name": "feynman-slides community templates",
+  "updated": "2026-09-19",
+  "templates": [
+    {
+      "id": "handout",
+      "name": "Handout",
+      "author": "feynman-slides",
+      "version": "1.0.0",
+      "description": "Warm paper and a bookish serif. Reads like something printed.",
+      "palette": {
+        "paper": "#fdfaf3",
+        "ink": "#1f1b16",
+        "muted": "#8a7f6d",
+        "accent": "#9a3412"
+      },
+      "url": "/templates/community/handout.json",
+      "repo": "feynman-slides/templates"
+    },
+    {
+      "id": "terminal",
+      "name": "Terminal",
+      "author": "feynman-slides",
+      "version": "1.0.0",
+      "description": "Monospace on near-black. For decks that are mostly code.",
+      "palette": {
+        "paper": "#0c0d10",
+        "ink": "#d7dce4",
+        "muted": "#6b7280",
+        "accent": "#4ade80"
+      },
+      "url": "/templates/community/terminal.json",
+      "repo": "feynman-slides/templates"
+    },
+    {
+      "id": "lecture",
+      "name": "Lecture",
+      "author": "feynman-slides",
+      "version": "1.0.0",
+      "description": "A blue band at the top, the way every course deck you have ever been handed looks.",
+      "palette": {
+        "paper": "#ffffff",
+        "ink": "#111827",
+        "muted": "#6b7280",
+        "accent": "#1d4ed8"
+      },
+      "url": "/templates/community/lecture.json",
+      "repo": "feynman-slides/templates"
+    },
+    {
+      "id": "sticky",
+      "name": "Sticky",
+      "author": "feynman-slides",
+      "version": "1.0.0",
+      "description": "Big soft type on a coloured card. Good for one idea per slide.",
+      "palette": {
+        "paper": "#fff4d6",
+        "ink": "#2a1f06",
+        "muted": "#8a7434",
+        "accent": "#d946ef"
+      },
+      "url": "/templates/community/sticky.json",
+      "repo": "feynman-slides/templates"
+    }
+  ]
+}

@@ -37,9 +37,12 @@ export const imageDir = (slug: string) => join(dir(slug), "images");
 export type Card = {
   slug: string;
   title: string;
+  template: string;
   slides: number;
   blocking: number;
   updated: number;
+  /** The first slide's elements, so the home page can show the deck rather than its initial. */
+  first: unknown[];
 };
 
 /**
@@ -57,7 +60,9 @@ export function list(): Card[] {
       return {
         slug: e.name,
         title: deck.title,
+        template: deck.template ?? "feynman",
         slides: deck.slides.length,
+        first: deck.slides[0]?.els ?? [],
         blocking: blocking(readState(e.name)).length,
         updated: statSync(deckPath(e.name)).mtimeMs,
       };
@@ -65,11 +70,25 @@ export function list(): Card[] {
     .sort((a, b) => b.updated - a.updated);
 }
 
-export function create(title: string): string {
-  const slug = slugify(title);
+export function create(title: string, template = "feynman", titleLayout?: unknown): string {
+  let slug = slugify(title);
+  // Two decks called "Hash tables" are two decks, not one: without this the
+  // second one opens the first, and you lose an afternoon before you notice.
+  if (existsSync(deckPath(slug))) {
+    let n = 2;
+    while (existsSync(deckPath(`${slug}-${n}`))) n += 1;
+    slug = `${slug}-${n}`;
+  }
   mkdirSync(dir(slug), { recursive: true });
-  if (!existsSync(deckPath(slug))) writeDeck(slug, blankDeck(title));
+  writeDeck(slug, blankDeck(title, template, titleLayout));
   return slug;
+}
+
+/** Rename in place. The slug is the deck's address - changing it would break its images. */
+export function rename(slug: string, title: string): void {
+  const deck = readDeck(slug);
+  deck.title = title;
+  writeDeck(slug, deck);
 }
 
 export function readDeck(slug: string): Deck {

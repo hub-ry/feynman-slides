@@ -1,0 +1,185 @@
+{
+  "id": "terminal",
+  "name": "Terminal",
+  "author": "feynman-slides",
+  "version": "1.0.0",
+  "description": "Monospace on near-black. For decks that are mostly code.",
+  "palette": {
+    "paper": "#0c0d10",
+    "ink": "#d7dce4",
+    "muted": "#6b7280",
+    "accent": "#4ade80"
+  },
+  "roles": {
+    "title": {
+      "family": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      "size": 36,
+      "weight": 600,
+      "line": 1.2,
+      "letter": "-0.01em",
+      "color": "ink",
+      "align": "left"
+    },
+    "body": {
+      "family": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      "size": 20,
+      "weight": 400,
+      "line": 1.55,
+      "letter": "0",
+      "color": "ink",
+      "align": "left"
+    },
+    "caption": {
+      "family": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      "size": 13,
+      "weight": 400,
+      "line": 1.42,
+      "letter": "0",
+      "color": "muted",
+      "align": "left"
+    }
+  },
+  "layouts": [
+    {
+      "id": "title",
+      "name": "Title",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 96,
+          "y": 190,
+          "w": 768,
+          "h": 116,
+          "hint": "Title"
+        },
+        {
+          "type": "text",
+          "role": "caption",
+          "x": 96,
+          "y": 318,
+          "w": 768,
+          "h": 40,
+          "hint": "Subtitle"
+        }
+      ]
+    },
+    {
+      "id": "title-body",
+      "name": "Title and body",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 58,
+          "w": 816,
+          "h": 78,
+          "hint": "Title"
+        },
+        {
+          "type": "shape",
+          "shape": "line",
+          "fill": "accent",
+          "x": 72,
+          "y": 146,
+          "w": 64,
+          "h": 3
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 72,
+          "y": 178,
+          "w": 816,
+          "h": 292,
+          "hint": "Body"
+        }
+      ]
+    },
+    {
+      "id": "section",
+      "name": "Section",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 240,
+          "w": 720,
+          "h": 84,
+          "hint": "Section"
+        }
+      ]
+    },
+    {
+      "id": "two",
+      "name": "Two columns",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 58,
+          "w": 816,
+          "h": 78,
+          "hint": "Title"
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 72,
+          "y": 172,
+          "w": 384,
+          "h": 296,
+          "hint": "Left"
+        },
+        {
+          "type": "text",
+          "role": "body",
+          "x": 504,
+          "y": 172,
+          "w": 384,
+          "h": 296,
+          "hint": "Right"
+        }
+      ]
+    },
+    {
+      "id": "figure",
+      "name": "Figure",
+      "els": [
+        {
+          "type": "text",
+          "role": "title",
+          "x": 72,
+          "y": 48,
+          "w": 816,
+          "h": 60,
+          "hint": "Title"
+        },
+        {
+          "type": "image",
+          "x": 72,
+          "y": 124,
+          "w": 816,
+          "h": 300
+        },
+        {
+          "type": "text",
+          "role": "caption",
+          "x": 72,
+          "y": 436,
+          "w": 816,
+          "h": 44,
+          "hint": "What this shows"
+        }
+      ]
+    },
+    {
+      "id": "blank",
+      "name": "Blank",
+      "els": []
+    }
+  ]
+}

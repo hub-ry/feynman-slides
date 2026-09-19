@@ -14,6 +14,7 @@ import { startCritic, type CriticSession, type Finding } from "./critic.ts";
 import { type Deck, slideKey, uid } from "./deck.ts";
 import * as store from "./store.ts";
 import { exportDeck, Blocked } from "./export.ts";
+import * as templates from "./templates.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = join(ROOT, "public");
@@ -135,6 +136,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (req.method === "GET" && (p === "/" || p === "/index.html"))
     return sendFile(res, join(PUBLIC, "index.html"), PUBLIC);
+  if (req.method === "GET" && p.startsWith("/templates/"))
+    return sendFile(res, join(templates.SHIPPED, p.slice("/templates/".length)), templates.SHIPPED);
   if (req.method === "GET" && p.startsWith("/vendor/"))
     return sendFile(res, join(VENDOR, p.slice("/vendor/".length)), VENDOR);
   if (req.method === "GET" && !p.startsWith("/api/"))
@@ -142,9 +145,72 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (req.method === "GET" && p === "/api/decks") return json(res, 200, store.list());
   if (req.method === "POST" && p === "/api/decks") {
-    const { title } = await body(req);
+    const { title, template } = await body(req);
     if (!title?.trim()) return json(res, 400, { error: "a deck needs a title" });
-    return json(res, 200, { slug: store.create(title.trim()) });
+    const t = templates.get(String(template ?? "feynman"));
+    const first = t.layouts.find((l: { id: string }) => l.id === "title") ?? t.layouts[0];
+    return json(res, 200, { slug: store.create(title.trim(), t.id, first) });
+  }
+
+  // --- templates ----------------------------------------------------------
+  //
+  // A folder you own and a catalogue that is a file. Installing writes one
+  // validated JSON file and runs nothing.
+
+  if (req.method === "GET" && p === "/api/templates")
+    return json(res, 200, { installed: templates.all(), dir: templates.DIR });
+
+  if (req.method === "GET" && p === "/api/templates/catalog") {
+    const cat = await templates.catalog();
+    const have = new Set(templates.all().map((t) => t.id));
+    return json(res, 200, {
+      ...cat,
+      entries: cat.entries.map((e) => ({ ...e, installed: have.has(e.id) })),
+    });
+  }
+
+  if (req.method === "GET" && p.startsWith("/api/templates/raw/")) {
+    const one = templates.raw(p.slice("/api/templates/raw/".length));
+    return one ? json(res, 200, one) : json(res, 404, { error: "no such template" });
+  }
+
+  if (req.method === "POST" && p === "/api/templates/install") {
+    const { url } = await body(req);
+    if (!url) return json(res, 400, { error: "install what?" });
+    try {
+      return json(res, 200, { template: await templates.install(String(url)) });
+    } catch (err) {
+      return json(res, 400, { error: String((err as Error).message ?? err) });
+    }
+  }
+
+  if (req.method === "POST" && p === "/api/templates/save") {
+    try {
+      return json(res, 200, { template: templates.write((await body(req)) as Record<string, unknown>) });
+    } catch (err) {
+      return json(res, 400, { error: String((err as Error).message ?? err) });
+    }
+  }
+
+  if (req.method === "POST" && p === "/api/templates/from-deck") {
+    const { slug, id, name } = await body(req);
+    if (!slug || !id || !name) return json(res, 400, { error: "needs a deck, an id and a name" });
+    try {
+      const made = templates.fromDeck(store.readDeck(String(slug)), String(id), String(name));
+      return json(res, 200, { template: templates.write(made) });
+    } catch (err) {
+      return json(res, 400, { error: String((err as Error).message ?? err) });
+    }
+  }
+
+  if (req.method === "POST" && p === "/api/templates/remove") {
+    const { id } = await body(req);
+    try {
+      templates.remove(String(id));
+      return json(res, 200, { ok: true });
+    } catch (err) {
+      return json(res, 400, { error: String((err as Error).message ?? err) });
+    }
   }
 
   const m = /^\/api\/deck\/([a-z0-9-]+)(?:\/([a-z]+))?(?:\/(.+))?$/.exec(p);
@@ -179,6 +245,22 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const deck = (await body(req)) as Deck;
     if (!deck?.slides) return json(res, 400, { error: "not a deck" });
     store.writeDeck(slug, deck);
+    return json(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && action === "rename") {
+    const { title } = await body(req);
+    if (!title?.trim()) return json(res, 400, { error: "a deck needs a title" });
+    store.rename(slug, title.trim());
+    live.get(slug)?.critic.close();
+    live.delete(slug);
+    return json(res, 200, { ok: true });
+  }
+
+  if (req.method === "POST" && action === "delete") {
+    live.get(slug)?.critic.close();
+    live.delete(slug);
+    store.deleteDeck(slug);
     return json(res, 200, { ok: true });
   }
 

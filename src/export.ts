@@ -2,6 +2,10 @@
 // inlined as data URIs, no server, no accounts, opens offline. Arrow keys and
 // click advance it, so it presents as well as it reads.
 //
+// It draws through public/render.js and public/theme.js - the same two
+// functions the editor draws with - so the file you hand in is the file you
+// were looking at. Nothing in here knows what a bullet looks like.
+//
 // The gate lives here, in the export path, rather than in a disabled button.
 // dum-intern learned this the expensive way: asked not to build before
 // approval, it skipped the gate, wrote two files, and reported that nothing
@@ -11,10 +15,12 @@ import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
 import type { Deck, El } from "./deck.ts";
 import { W, H } from "./deck.ts";
-import { css } from "../public/type.js";
+import { elCss, elHtml, esc } from "../public/render.js";
+import { colorOf } from "../public/theme.js";
 import type { Finding } from "./critic.ts";
 import type { State } from "./store.ts";
 import { blocking, imageDir } from "./store.ts";
+import { get as getTemplate, type Template } from "./templates.ts";
 
 export class Blocked extends Error {
   // Longhand: Node strips types rather than compiling them, so a constructor
@@ -25,9 +31,6 @@ export class Blocked extends Error {
     this.findings = findings;
   }
 }
-
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 const MIME: Record<string, string> = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -42,26 +45,23 @@ function dataUri(slug: string, name: string): string {
   return `data:${mime};base64,${readFileSync(p).toString("base64")}`;
 }
 
-function element(slug: string, el: El): string {
-  const box = `left:${el.x}px;top:${el.y}px;width:${el.w}px;height:${el.h}px`;
+function element(slug: string, el: El, t: Template): string {
+  const style = elCss(el, t);
   if (el.type === "image") {
-    const src = dataUri(slug, el.src);
-    return src
-      ? `<img class="el" style="${box}" src="${src}" alt="${esc(el.alt)}">`
-      : "";
+    const src = el.src ? dataUri(slug, el.src) : "";
+    // A layout's empty image slot is a hole you did not fill. It is a prompt
+    // in the editor and nothing at all here.
+    return src ? `<img class="el" style="${style}" src="${src}" alt="${esc(el.alt)}">` : "";
   }
-  const style = `${box};${css(el.role)}`;
-  const lines = el.text
-    .split("\n")
-    .map((l) => `<div>${esc(l) || "&nbsp;"}</div>`)
-    .join("");
-  return `<div class="el text" style="${style}">${lines}</div>`;
+  if (el.type === "shape") return `<div class="el shape" style="${style}"></div>`;
+  return `<div class="el text" style="${style}">${elHtml(el, t)}</div>`;
 }
 
-const CSS = `
-:root { --ink:#16181d; --bg:#0d0f12; --paper:#ffffff; }
+const css = (t: Template) => `
+:root { --paper:${colorOf(t, "paper")}; --ink:${colorOf(t, "ink")}; --muted:${colorOf(t, "muted")}; --accent:${colorOf(t, "accent")}; }
 * { box-sizing:border-box; margin:0; }
-body { background:var(--bg); color:var(--ink); font:16px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;
+body { background:#0d0f12; color:var(--ink);
+  font:16px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;
   min-height:100vh; display:grid; place-items:center; overflow:hidden; }
 #stage { position:relative; width:${W}px; height:${H}px; transform-origin:center; }
 .slide { position:absolute; inset:0; background:var(--paper); overflow:hidden;
@@ -69,6 +69,8 @@ body { background:var(--bg); color:var(--ink); font:16px/1.4 ui-sans-serif,syste
 .slide.on { display:block; }
 .el { position:absolute; }
 .text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.text code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
+  background:color-mix(in srgb, var(--muted) 22%, transparent); padding:.05em .3em; border-radius:3px; }
 img.el { object-fit:contain; }
 #bar { position:fixed; bottom:1.1rem; left:50%; transform:translateX(-50%);
   color:#8b929b; font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.1em;
@@ -101,15 +103,15 @@ addEventListener('click',e=>show(i+(e.clientX<innerWidth/3?-1:1)));
 fit();show(0);
 `;
 
-export function html(slug: string, deck: Deck): string {
+export function html(slug: string, deck: Deck, t: Template = getTemplate(deck.template ?? "feynman")): string {
   const slides = deck.slides
-    .map((s) => `<section class="slide">${s.els.map((e) => element(slug, e)).join("")}</section>`)
+    .map((s) => `<section class="slide">${s.els.map((e) => element(slug, e, t)).join("")}</section>`)
     .join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(deck.title)}</title>
-<style>${CSS}</style></head>
+<style>${css(t)}</style></head>
 <body><div id="stage">
 ${slides}
 </div><div id="bar"></div>
