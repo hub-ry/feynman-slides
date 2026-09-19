@@ -10,7 +10,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname, extname, normalize, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startCritic, type CriticSession, type Finding } from "./critic.ts";
+import { startCritic, type CriticSession, type Finding, resolveProvider, testCriticConnection } from "./critic.ts";
 import { type Deck, slideKey, uid } from "./deck.ts";
 import * as store from "./store.ts";
 import { exportDeck, Blocked } from "./export.ts";
@@ -288,20 +288,44 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     }
   }
 
+  if (req.method === "GET" && p === "/api/critic/config") {
+    const config = store.readCriticConfig();
+    const resolved = await resolveProvider(config);
+    return json(res, 200, { config, activeMode: resolved.name, activeProvider: resolved.provider });
+  }
+
+  if (req.method === "POST" && p === "/api/critic/config") {
+    const newConfig = await body(req);
+    store.writeCriticConfig(newConfig);
+    for (const [, d] of live) {
+      d.critic.setConfig(newConfig);
+    }
+    const resolved = await resolveProvider(newConfig);
+    return json(res, 200, { ok: true, config: newConfig, activeMode: resolved.name, activeProvider: resolved.provider });
+  }
+
+  if (req.method === "POST" && p === "/api/critic/test") {
+    const testConfig = await body(req);
+    const result = await testCriticConnection(testConfig);
+    return json(res, 200, result);
+  }
+
   if (req.method === "GET" && p === "/api/critic/mode") {
-    return json(res, 200, { mode: process.env.FEYNMAN_CRITIC || "auto" });
+    const config = store.readCriticConfig();
+    const resolved = await resolveProvider(config);
+    return json(res, 200, { mode: config.provider, activeMode: resolved.name });
   }
 
   if (req.method === "POST" && p === "/api/critic/mode") {
     const { mode, slug } = await body(req);
-    if (mode === "auto" || mode === "claude" || mode === "heuristic") {
-      process.env.FEYNMAN_CRITIC = mode;
-      if (slug && live.has(slug)) {
-        live.get(slug)?.critic.setMode(mode);
-      }
-      return json(res, 200, { ok: true, mode });
+    const config = store.readCriticConfig();
+    config.provider = mode;
+    store.writeCriticConfig(config);
+    if (slug && live.has(slug)) {
+      live.get(slug)?.critic.setMode(mode);
     }
-    return json(res, 400, { error: "invalid critic mode" });
+    const resolved = await resolveProvider(config);
+    return json(res, 200, { ok: true, mode, activeMode: resolved.name });
   }
 
   const m = /^\/api\/deck\/([a-z0-9-]+)(?:\/([a-z]+))?(?:\/(.+))?$/.exec(p);

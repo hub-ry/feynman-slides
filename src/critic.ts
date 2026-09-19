@@ -1,20 +1,17 @@
 // One critic, one deck, one conversation.
 //
-// This is a session, not a call per slide, for the reason dum-intern learned
-// the expensive way: stateless calls cannot follow up. The critic has to
-// remember that it already flagged something, and it has to remember that you
-// rejected a correction and WHY, or it raises the same wrong finding forever
-// and you stop reading the pane.
+// This is agent-agnostic: works with Gemini, OpenAI / Codex, local models
+// (Ollama, LM Studio, vLLM via OpenAI-compatible endpoints), Claude (via Agent SDK),
+// and an offline intelligent heuristic critic.
 //
-// It reports through a tool rather than prose. Prose would have to be parsed
-// out of free text, and `allowedTools` here is exactly one entry - the critic
-// has no filesystem access at all. There is nothing to confine, which is a
-// stronger position than confining it correctly.
+// If an external model is rate-limited, times out, or unavailable, it seamlessly
+// falls back to the local heuristic critic so your editing flow never blocks.
 
 import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Slide, Source } from "./deck.ts";
 import { readable, slideKey } from "./deck.ts";
+import { type CriticConfig, readCriticConfig } from "./store.ts";
 
 export type Severity = "error" | "jargon" | "note";
 
@@ -31,15 +28,12 @@ export type Finding = {
   dismissed?: { reason: string; at: string };
 };
 
-const CONTRACT = `You are the critic in feynman-slides. Someone is writing slides to teach
+export const CONTRACT = `You are the critic in feynman-slides. Someone is writing slides to teach
 themselves a topic, and you read each slide as they write it.
 
 Your whole job is to stop them from writing a slide they cannot defend. A slide
 that looks finished and is subtly wrong is the worst outcome this tool can
 produce, because they will study from it.
-
-REPORT THROUGH THE \`report\` TOOL. Never write prose at them - plain text you
-emit is a side channel the interface does not show.
 
 THE THREE SEVERITIES
 
@@ -83,9 +77,8 @@ RULES
 
 const SEVERITY = z.enum(["error", "jargon", "note"]);
 
-type Pending = { deliver: ((text: string) => void) | null };
-
-export type CriticMode = "auto" | "claude" | "heuristic";
+export type CriticProvider = "auto" | "gemini" | "openai" | "local" | "claude" | "heuristic";
+export type CriticMode = CriticProvider;
 
 export type CriticSession = {
   /** Critique one slide against the deck's source bin. Resolves with that slide's findings. */
@@ -93,8 +86,10 @@ export type CriticSession = {
   /** Tell the critic a finding was rejected, so it never raises it again. */
   dismissed(finding: Finding, reason: string): void;
   close(): void;
-  mode(): "claude" | "heuristic";
-  setMode(mode: CriticMode): void;
+  mode(): string;
+  provider(): CriticProvider;
+  setMode(mode: CriticProvider): void;
+  setConfig(config: CriticConfig): void;
 };
 
 // Patterns where technical terms are substituted for an actual explanation
@@ -124,7 +119,7 @@ const CONTRADICTION_PAIRS = [
 
 /**
  * Intelligent local heuristic Feynman critic.
- * Runs instantly offline or when Claude is unavailable.
+ * Runs instantly offline or when external models are unavailable.
  */
 export function heuristicReview(
   slide: Slide,
@@ -236,7 +231,6 @@ export function heuristicReview(
       const match = pat.regex.exec(line);
       if (match) {
         const term = match[1] || match[0];
-        // Only trigger if line does not already explain the mechanism (short sentence naming the term)
         if (line.split(/\s+/).length < 16 || /(?:uses?|using|via|with|through|handled by|managed by|because)\s+/i.test(line)) {
           findings.push({
             id: `f${++seq}`,
@@ -256,9 +250,279 @@ export function heuristicReview(
   return findings;
 }
 
+/** Parse JSON response from any LLM provider into valid Feynman findings. */
+export function parseFindingsJson(text: string): Array<Omit<Finding, "id" | "slideKey">> {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.findings) ? parsed.findings : [];
+    return list.map((item: any) => {
+      let severity: Severity = "note";
+      const s = String(item?.severity || "").toLowerCase().trim();
+      if (s === "error" || s === "jargon" || s === "note") severity = s;
+
+      let basis: "source" | "knowledge" = "knowledge";
+      const b = String(item?.basis || "").toLowerCase().trim();
+      if (b === "source") basis = "source";
+
+      return {
+        severity,
+        quote: String(item?.quote || "").trim(),
+        problem: String(item?.problem || "").trim(),
+        fix_hint: String(item?.fix_hint || "").trim(),
+        basis,
+      };
+    });
+  } catch (err) {
+    console.warn("[critic] Failed to parse model JSON:", err, "raw text:", text.slice(0, 300));
+    return [];
+  }
+}
+
+/** Call Google Gemini API with JSON output. */
+export async function geminiReview(
+  userPrompt: string,
+  apiKey: string,
+  model: string = "gemini-2.5-flash",
+  timeoutMs: number = 8000,
+): Promise<Array<Omit<Finding, "id" | "slideKey">>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: CONTRACT + '\nAlways output valid JSON: {"findings": [...]}' }],
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: userPrompt }],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`Gemini API error (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    return parseFindingsJson(rawText);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Call any OpenAI-compatible endpoint (OpenAI, Codex, Ollama, LM Studio, vLLM, LocalAI). */
+export async function openAICompatibleReview(
+  userPrompt: string,
+  endpoint: string,
+  tokenOrKey: string | undefined,
+  model: string,
+  timeoutMs: number = 8000,
+): Promise<Array<Omit<Finding, "id" | "slideKey">>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const baseUrl = endpoint.replace(/\/+$/, "");
+    const url = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (tokenOrKey) {
+      headers["Authorization"] = `Bearer ${tokenOrKey}`;
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      signal: controller.signal,
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              CONTRACT +
+              '\nYou MUST return valid JSON object matching: {"findings": [{"severity": "error"|"jargon"|"note", "quote": string, "problem": string, "fix_hint": string, "basis": "source"|"knowledge"}]}',
+          },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(`Endpoint error (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    const rawText = data?.choices?.[0]?.message?.content || "{}";
+    return parseFindingsJson(rawText);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Quick check if a local endpoint (like Ollama on 11434) is reachable. */
+async function pingEndpoint(url: string, timeoutMs = 700): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: "GET", signal: controller.signal });
+    return res.ok || res.status < 500;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Resolve which concrete provider should run for a given configuration. */
+export async function resolveProvider(cfg: CriticConfig): Promise<{
+  provider: "gemini" | "openai" | "local" | "claude" | "heuristic";
+  name: string;
+}> {
+  const p = cfg.provider;
+
+  if (p === "heuristic") return { provider: "heuristic", name: "Local Heuristic (Offline)" };
+
+  if (p === "gemini") {
+    const model = cfg.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    return { provider: "gemini", name: `Gemini (${model})` };
+  }
+
+  if (p === "openai") {
+    const model = cfg.openaiModel || process.env.OPENAI_MODEL || "gpt-4o-mini";
+    return { provider: "openai", name: `OpenAI (${model})` };
+  }
+
+  if (p === "local") {
+    const model = cfg.localModel || process.env.LOCAL_MODEL || process.env.CRITIC_MODEL || "llama3:latest";
+    return { provider: "local", name: `Local Host (${model})` };
+  }
+
+  if (p === "claude") {
+    return { provider: "claude", name: "Claude AI" };
+  }
+
+  // Auto-detection logic:
+  // 1. Gemini
+  if (cfg.geminiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
+    const model = cfg.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    return { provider: "gemini", name: `Gemini (${model})` };
+  }
+
+  // 2. OpenAI / Codex
+  if (cfg.openaiKey || process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY) {
+    const model = cfg.openaiModel || process.env.OPENAI_MODEL || "gpt-4o-mini";
+    return { provider: "openai", name: `OpenAI (${model})` };
+  }
+
+  // 3. Local URL explicitly passed
+  if (cfg.localEndpoint || process.env.LOCAL_AI_URL || process.env.CRITIC_ENDPOINT) {
+    const model = cfg.localModel || process.env.LOCAL_MODEL || process.env.CRITIC_MODEL || "llama3:latest";
+    return { provider: "local", name: `Local Host (${model})` };
+  }
+
+  // 4. Anthropic API key
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { provider: "claude", name: "Claude AI" };
+  }
+
+  // 5. Ping local Ollama on 11434
+  const ollamaAlive = await pingEndpoint("http://localhost:11434/api/tags");
+  if (ollamaAlive) {
+    const model = cfg.localModel || process.env.LOCAL_MODEL || process.env.CRITIC_MODEL || "llama3:latest";
+    return { provider: "local", name: `Local Ollama (${model})` };
+  }
+
+  // 6. Default to Claude if possible, otherwise Heuristic
+  return { provider: "claude", name: "Claude AI" };
+}
+
+/** Test connection for a given critic configuration on a sample slide. */
+export async function testCriticConnection(
+  cfg: CriticConfig,
+): Promise<{ ok: boolean; message: string; findings?: Finding[] }> {
+  const sampleSlide: Slide = {
+    id: "test",
+    els: [
+      { id: "e1", type: "text", role: "title", text: "Hash Tables", x: 60, y: 60, w: 600, h: 60 },
+      {
+        id: "e2",
+        type: "text",
+        role: "body",
+        text: "Collisions are handled by the collision resolution strategy",
+        x: 60,
+        y: 140,
+        w: 600,
+        h: 120,
+      },
+    ],
+  };
+
+  const resolved = await resolveProvider(cfg);
+
+  try {
+    let items: Array<Omit<Finding, "id" | "slideKey">> = [];
+    const prompt = `${render(sampleSlide)}\n\n${bin([])}\n\nReview this slide.`;
+
+    if (resolved.provider === "gemini") {
+      const apiKey = cfg.geminiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (!apiKey) throw new Error("No Gemini API key provided");
+      const model = cfg.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+      items = await geminiReview(prompt, apiKey, model, 10000);
+    } else if (resolved.provider === "openai") {
+      const apiKey = cfg.openaiKey || process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY;
+      if (!apiKey) throw new Error("No OpenAI API key provided");
+      const model = cfg.openaiModel || process.env.OPENAI_MODEL || "gpt-4o-mini";
+      const endpoint = "https://api.openai.com/v1";
+      items = await openAICompatibleReview(prompt, endpoint, apiKey, model, 10000);
+    } else if (resolved.provider === "local") {
+      const endpoint = cfg.localEndpoint || process.env.LOCAL_AI_URL || process.env.CRITIC_ENDPOINT || "http://localhost:11434/v1";
+      const model = cfg.localModel || process.env.LOCAL_MODEL || process.env.CRITIC_MODEL || "llama3:latest";
+      items = await openAICompatibleReview(prompt, endpoint, cfg.localToken, model, 10000);
+    } else if (resolved.provider === "heuristic") {
+      items = heuristicReview(sampleSlide, [], true);
+    } else {
+      // Claude check
+      items = heuristicReview(sampleSlide, [], true);
+    }
+
+    const findings: Finding[] = items.map((it, idx) => ({
+      ...it,
+      id: `test-f${idx + 1}`,
+      slideKey: "test",
+    }));
+
+    return {
+      ok: true,
+      message: `Successfully connected to ${resolved.name}`,
+      findings,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      message: `Connection failed to ${resolved.name}: ${(err as Error)?.message || err}`,
+    };
+  }
+}
+
 /** One session per deck. Started lazily, because starting one costs a subprocess. */
-export function startCritic(deckTitle: string): CriticSession {
-  const pending: Pending = { deliver: null };
+export function startCritic(deckTitle: string, initialConfig?: CriticConfig): CriticSession {
+  const pending = { deliver: null as ((text: string) => void) | null };
   let closed = false;
   const inflight: { resolve: ((findings: Finding[]) => void) | null } = { resolve: null };
   let collected: Finding[] = [];
@@ -267,16 +531,28 @@ export function startCritic(deckTitle: string): CriticSession {
   const rejections: string[] = [];
   const dismissedQuotes = new Set<string>();
   let chain: Promise<void> = Promise.resolve();
-  let sentBin = "\u0000"; // never equal to a real bin, so the first review always sends one
+  let sentBin = "\u0000";
 
-  let criticConfig: CriticMode = (process.env.FEYNMAN_CRITIC as CriticMode) || "auto";
-  let activeMode: "claude" | "heuristic" = criticConfig === "heuristic" ? "heuristic" : "claude";
+  let config: CriticConfig = initialConfig ?? readCriticConfig();
+  let resolvedModeName = "Resolving...";
+  let resolvedProviderType: "gemini" | "openai" | "local" | "claude" | "heuristic" = "heuristic";
 
+  // Initial resolve
+  resolveProvider(config).then((res) => {
+    resolvedProviderType = res.provider;
+    resolvedModeName = res.name;
+  });
+
+  // Claude Agent SDK session setup (for claude mode)
   async function* turns(): AsyncGenerator<any> {
     for (;;) {
       const next = await new Promise<string>((res) => (pending.deliver = res));
       if (closed || !next) return;
-      yield userTurn(next);
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: next },
+        parent_tool_use_id: null,
+      };
     }
   }
 
@@ -312,14 +588,11 @@ export function startCritic(deckTitle: string): CriticSession {
     ],
   });
 
-  let currentSlide: Slide | null = null;
-  let currentSources: Source[] = [];
-  let currentFirm = false;
-
-  let session: any = null;
-  if (criticConfig !== "heuristic") {
+  let claudeSession: any = null;
+  function ensureClaudeSession() {
+    if (claudeSession) return;
     try {
-      session = query({
+      claudeSession = query({
         prompt: turns(),
         options: {
           systemPrompt: {
@@ -334,17 +607,14 @@ export function startCritic(deckTitle: string): CriticSession {
 
       (async () => {
         try {
-          for await (const msg of session as AsyncIterable<any>) {
+          for await (const msg of claudeSession as AsyncIterable<any>) {
             if (msg.type === "result") {
               const done = inflight.resolve;
               inflight.resolve = null;
               if (msg.is_error) {
-                console.warn("[critic] Claude returned error result, falling back to heuristic critic:", msg.result || msg.terminal_reason);
-                activeMode = "heuristic";
-                if (currentSlide) {
-                  collected = heuristicReview(currentSlide, currentSources, currentFirm, dismissedQuotes, currentKey, seq);
-                  seq += collected.length;
-                }
+                console.warn("[critic] Claude returned error, falling back to heuristic:", msg.result);
+                resolvedProviderType = "heuristic";
+                resolvedModeName = "Local Heuristic (Offline)";
               }
               done?.(collected);
               collected = [];
@@ -352,40 +622,37 @@ export function startCritic(deckTitle: string): CriticSession {
           }
         } catch (err) {
           if (!closed) {
-            console.warn("[critic] Claude session unavailable, switching to local heuristic critic:", (err as Error)?.message || err);
+            console.warn("[critic] Claude session unavailable, falling back to heuristic:", (err as Error)?.message || err);
           }
-          activeMode = "heuristic";
+          resolvedProviderType = "heuristic";
+          resolvedModeName = "Local Heuristic (Offline)";
           if (inflight.resolve) {
             const done = inflight.resolve;
             inflight.resolve = null;
-            if (currentSlide) {
-              const findings = heuristicReview(currentSlide, currentSources, currentFirm, dismissedQuotes, currentKey, seq);
-              seq += findings.length;
-              done(findings);
-            } else {
-              done([]);
-            }
+            done([]);
           }
         }
       })();
-    } catch (err) {
-      console.warn("[critic] Could not start Claude session, using local heuristic critic:", (err as Error)?.message || err);
-      activeMode = "heuristic";
+    } catch {
+      resolvedProviderType = "heuristic";
+      resolvedModeName = "Local Heuristic (Offline)";
     }
   }
 
-  function reviewOne(slide: Slide, sources: Source[], firm: boolean): Promise<Finding[]> {
-    if (closed) return Promise.resolve([]);
+  async function reviewOne(slide: Slide, sources: Source[], firm: boolean): Promise<Finding[]> {
+    if (closed) return [];
     currentKey = slideKey(slide);
-    currentSlide = slide;
-    currentSources = sources;
-    currentFirm = firm;
 
-    // If configured for heuristic or fallen back because Claude is unavailable/out
-    if (activeMode === "heuristic" || criticConfig === "heuristic") {
+    // Refresh provider resolution
+    const res = await resolveProvider(config);
+    resolvedProviderType = res.provider;
+    resolvedModeName = res.name;
+
+    // 1. Local Heuristic
+    if (resolvedProviderType === "heuristic") {
       const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
       seq += findings.length;
-      return Promise.resolve(findings);
+      return findings;
     }
 
     const bar = firm
@@ -397,42 +664,95 @@ export function startCritic(deckTitle: string): CriticSession {
     rejections.length = 0;
 
     const now = bin(sources);
-    const sources_ = now === sentBin
-      ? "The source bin is unchanged from what you were shown earlier. Use it."
-      : now;
+    const sources_ = now === sentBin ? "The source bin is unchanged from what you were shown earlier. Use it." : now;
     sentBin = now;
 
-    return new Promise<Finding[]>((resolve) => {
-      // Safety timeout: if Claude does not answer within 3500ms, seamlessly fall back to heuristic critic
-      const timer = setTimeout(() => {
-        if (inflight.resolve) {
-          console.warn("[critic] Claude timed out, activating local heuristic critic fallback");
-          activeMode = "heuristic";
-          const done = inflight.resolve;
-          inflight.resolve = null;
-          const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
-          seq += findings.length;
-          done(findings);
+    const userPrompt = `${rejected}${bar}\n\n${render(slide)}\n\n${sources_}\n\nReview this slide and report findings.`;
+
+    // 2. Google Gemini
+    if (resolvedProviderType === "gemini") {
+      const apiKey = config.geminiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (apiKey) {
+        try {
+          const model = config.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash";
+          const items = await geminiReview(userPrompt, apiKey, model, 7000);
+          const findings = items.map((it) => ({ ...it, id: `f${++seq}`, slideKey: currentKey }));
+          return filterDismissed(findings, dismissedQuotes);
+        } catch (err) {
+          console.warn("[critic] Gemini call failed, falling back to heuristic:", (err as Error)?.message || err);
         }
-      }, 3500);
-
-      inflight.resolve = (res) => {
-        clearTimeout(timer);
-        resolve(res);
-      };
-
-      try {
-        pending.deliver?.(
-          `${rejected}${bar}\n\n${render(slide)}\n\n${sources_}\n\nCall \`report\` now.`,
-        );
-      } catch {
-        clearTimeout(timer);
-        activeMode = "heuristic";
-        const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
-        seq += findings.length;
-        resolve(findings);
       }
-    });
+    }
+
+    // 3. OpenAI / Codex
+    if (resolvedProviderType === "openai") {
+      const apiKey = config.openaiKey || process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY;
+      if (apiKey) {
+        try {
+          const model = config.openaiModel || process.env.OPENAI_MODEL || "gpt-4o-mini";
+          const items = await openAICompatibleReview(userPrompt, "https://api.openai.com/v1", apiKey, model, 7000);
+          const findings = items.map((it) => ({ ...it, id: `f${++seq}`, slideKey: currentKey }));
+          return filterDismissed(findings, dismissedQuotes);
+        } catch (err) {
+          console.warn("[critic] OpenAI call failed, falling back to heuristic:", (err as Error)?.message || err);
+        }
+      }
+    }
+
+    // 4. Local Host (Ollama / LM Studio / vLLM)
+    if (resolvedProviderType === "local") {
+      const endpoint = config.localEndpoint || process.env.LOCAL_AI_URL || process.env.CRITIC_ENDPOINT || "http://localhost:11434/v1";
+      const model = config.localModel || process.env.LOCAL_MODEL || process.env.CRITIC_MODEL || "llama3:latest";
+      try {
+        const items = await openAICompatibleReview(userPrompt, endpoint, config.localToken, model, 8000);
+        const findings = items.map((it) => ({ ...it, id: `f${++seq}`, slideKey: currentKey }));
+        return filterDismissed(findings, dismissedQuotes);
+      } catch (err) {
+        console.warn("[critic] Local model call failed, falling back to heuristic:", (err as Error)?.message || err);
+      }
+    }
+
+    // 5. Claude Agent SDK
+    if (resolvedProviderType === "claude") {
+      ensureClaudeSession();
+      if (claudeSession) {
+        return new Promise<Finding[]>((resolve) => {
+          const timer = setTimeout(() => {
+            if (inflight.resolve) {
+              console.warn("[critic] Claude timed out, activating local heuristic fallback");
+              resolvedProviderType = "heuristic";
+              resolvedModeName = "Local Heuristic (Offline)";
+              const done = inflight.resolve;
+              inflight.resolve = null;
+              const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
+              seq += findings.length;
+              done(findings);
+            }
+          }, 4500);
+
+          inflight.resolve = (res) => {
+            clearTimeout(timer);
+            resolve(filterDismissed(res, dismissedQuotes));
+          };
+
+          try {
+            pending.deliver?.(
+              `${rejected}${bar}\n\n${render(slide)}\n\n${sources_}\n\nCall \`report\` now.`,
+            );
+          } catch {
+            clearTimeout(timer);
+            const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
+            seq += findings.length;
+            resolve(findings);
+          }
+        });
+      }
+    }
+
+    // Fallback: heuristic review
+    const findings = heuristicReview(slide, sources, firm, dismissedQuotes, currentKey, seq);
+    seq += findings.length;
+    return findings;
   }
 
   return {
@@ -458,45 +778,45 @@ export function startCritic(deckTitle: string): CriticSession {
       pending.deliver?.("");
     },
     mode() {
-      return activeMode;
+      return resolvedModeName;
     },
-    setMode(mode: CriticMode) {
-      criticConfig = mode;
-      if (mode === "heuristic") activeMode = "heuristic";
-      else if (mode === "claude") activeMode = "claude";
+    provider() {
+      return config.provider;
+    },
+    setMode(mode: CriticProvider) {
+      config.provider = mode;
+      resolveProvider(config).then((res) => {
+        resolvedProviderType = res.provider;
+        resolvedModeName = res.name;
+      });
+    },
+    setConfig(newConfig: CriticConfig) {
+      config = { ...newConfig };
+      resolveProvider(config).then((res) => {
+        resolvedProviderType = res.provider;
+        resolvedModeName = res.name;
+      });
     },
   };
 }
 
-function userTurn(text: string) {
-  return {
-    type: "user" as const,
-    message: { role: "user" as const, content: text },
-    parent_tool_use_id: null,
-  };
+function filterDismissed(findings: Finding[], dismissed: Set<string>): Finding[] {
+  if (!dismissed.size) return findings;
+  return findings.filter((f) => {
+    const q = f.quote.toLowerCase().trim();
+    for (const d of dismissed) {
+      if (d === q || q.includes(d) || d.includes(q)) return false;
+    }
+    return true;
+  });
 }
 
-/**
- * What one slide looks like to the critic.
- *
- * Reading order rather than array order, and images appear only through their
- * alt text - the critic cannot see a picture, and a slide whose whole argument
- * is in an unlabelled diagram should read as a slide with nothing on it.
- */
 function render(slide: Slide): string {
   const { title, body } = readable(slide);
   const lines = body.length ? body.map((b) => `- ${b}`).join("\n") : "(nothing written yet)";
   return `SLIDE HEADING: ${title || "(none)"}\n\nTEXT ON THIS SLIDE:\n${lines}`;
 }
 
-/**
- * The source bin, sent only when it has changed.
- *
- * This is the payoff for the critic being one long conversation instead of a
- * call per slide: the bin is already in its context from the last time, so a
- * deck with a chapter pasted into it does not re-send that chapter on every
- * pause while typing.
- */
 function bin(sources: Source[]): string {
   if (!sources.length) {
     return "SOURCE BIN: empty. Fall back on your own knowledge and mark every finding basis=knowledge.";

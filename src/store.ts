@@ -283,3 +283,31 @@ export function saveImage(slug: string, name: string, bytes: Buffer): string {
 export function deleteDeck(slug: string): void {
   rmSync(dir(slug), { recursive: true, force: true });
 }
+
+export type CriticConfig = {
+  provider: "auto" | "gemini" | "openai" | "local" | "claude" | "heuristic";
+  geminiKey?: string;
+  geminiModel?: string;
+  openaiKey?: string;
+  openaiModel?: string;
+  localEndpoint?: string;
+  localModel?: string;
+  localToken?: string;
+};
+
+export function readCriticConfig(): CriticConfig {
+  const p = join(HOME, "critic.json");
+  if (!existsSync(p)) return { provider: (process.env.FEYNMAN_CRITIC as any) || "auto" };
+  try {
+    const parsed = JSON.parse(readFileSync(p, "utf8"));
+    if (process.env.FEYNMAN_CRITIC) parsed.provider = process.env.FEYNMAN_CRITIC;
+    return parsed;
+  } catch {
+    return { provider: (process.env.FEYNMAN_CRITIC as any) || "auto" };
+  }
+}
+
+export function writeCriticConfig(cfg: CriticConfig): void {
+  mkdirSync(HOME, { recursive: true });
+  writeFileSync(join(HOME, "critic.json"), JSON.stringify(cfg, null, 2) + "\n", "utf8");
+}
