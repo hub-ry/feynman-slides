@@ -8,6 +8,7 @@
 import { S, template } from "./state.js";
 import { miniature } from "./preview.js";
 import { W, H, colorOf } from "./theme.js";
+import { iconSvg } from "./icons.js";
 
 let box = null;
 let at = 0;
@@ -50,18 +51,17 @@ export function present(from = S.idx) {
       textContent: `${at + 1} / ${S.deck.slides.length}`,
     });
 
-    const studyToggle = Object.assign(document.createElement("button"), {
-      className: "pbar-btn" + (studyMode ? " on" : ""),
-      textContent: studyMode ? "🧠 Study mode: ON (S)" : "🧠 Study mode: OFF (S)",
-      title: "Active recall study mode: hides answers until revealed (S)",
-      onclick: (e) => {
-        e.stopPropagation();
-        studyMode = !studyMode;
-        revealed = false;
-        localStorage.setItem("present-study-mode", String(studyMode));
-        draw();
-      },
-    });
+    const studyToggle = document.createElement("button");
+    studyToggle.className = "pbar-btn" + (studyMode ? " on" : "");
+    studyToggle.innerHTML = `${iconSvg("brain", 14)} <span>Study mode: ${studyMode ? "ON" : "OFF"} (S)</span>`;
+    studyToggle.title = "Active recall study mode: hides answers until revealed (S)";
+    studyToggle.onclick = (e) => {
+      e.stopPropagation();
+      studyMode = !studyMode;
+      revealed = false;
+      localStorage.setItem("present-study-mode", String(studyMode));
+      draw();
+    };
 
     bar.append(count, studyToggle);
 

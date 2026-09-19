@@ -14,6 +14,7 @@ import { S, post, emit, loadTemplates, template } from "./state.js";
 import { miniature } from "./preview.js";
 import { normalize, TOKENS, colorOf, W } from "./theme.js";
 import * as ops from "./ops.js";
+import { iconSvg } from "./icons.js";
 
 // --- a dialog -------------------------------------------------------------
 
@@ -202,7 +203,7 @@ const PANES = {
     const searchInput = document.createElement("input");
     searchInput.type = "search";
     searchInput.className = "crowd-search";
-    searchInput.placeholder = "🔍 Search crowdsourced stylesheets by name, description, author...";
+    searchInput.placeholder = "Search crowdsourced stylesheets by name, description, author...";
     topBar.append(searchInput);
 
     const designerBtn = button("+ Design New Template", "primary small strong", () => {
@@ -222,11 +223,11 @@ const PANES = {
     filterRow.className = "crowd-tags";
     const TAGS = [
       { id: "all", label: "All Stylesheets" },
-      { id: "study", label: "🧠 Study & Anki" },
-      { id: "academic", label: "🎓 Cornell & Lecture" },
-      { id: "pitch", label: "🚀 Modern Pitch" },
-      { id: "minimal", label: "✨ Minimal & Swiss" },
-      { id: "dark", label: "💻 Dark & Code" },
+      { id: "study", icon: "brain", label: "Study & Anki" },
+      { id: "academic", icon: "graduation-cap", label: "Cornell & Lecture" },
+      { id: "pitch", icon: "rocket-launch", label: "Modern Pitch" },
+      { id: "minimal", icon: "sparkle", label: "Minimal & Swiss" },
+      { id: "dark", icon: "terminal-window", label: "Dark & Code" },
     ];
 
     let currentTag = "all";
@@ -297,15 +298,14 @@ const PANES = {
     };
 
     TAGS.forEach((tag) => {
-      const chip = Object.assign(document.createElement("button"), {
-        className: "tag-chip" + (currentTag === tag.id ? " on" : ""),
-        textContent: tag.label,
-        onclick: () => {
-          currentTag = tag.id;
-          filterRow.querySelectorAll(".tag-chip").forEach((c, idx) => c.classList.toggle("on", TAGS[idx].id === currentTag));
-          renderGrid();
-        },
-      });
+      const chip = document.createElement("button");
+      chip.className = "tag-chip" + (currentTag === tag.id ? " on" : "");
+      chip.innerHTML = tag.icon ? `${iconSvg(tag.icon, 13)} <span>${tag.label}</span>` : `<span>${tag.label}</span>`;
+      chip.onclick = () => {
+        currentTag = tag.id;
+        filterRow.querySelectorAll(".tag-chip").forEach((c, idx) => c.classList.toggle("on", TAGS[idx].id === currentTag));
+        renderGrid();
+      };
       filterRow.append(chip);
     });
     wrap.append(filterRow);
@@ -812,14 +812,14 @@ export async function openMoveDialog(slug, deckTitle, currentFolder, onDone) {
 
     const rootItem = document.createElement("div");
     rootItem.className = "move-item" + (selectedFolder === null ? " on" : "");
-    rootItem.innerHTML = `<span>📂 <em>No folder (unfiled)</em></span>`;
+    rootItem.innerHTML = `<span>${iconSvg("folder-open", 14)} <em>No folder (unfiled)</em></span>`;
     rootItem.onclick = () => { selectedFolder = null; renderItems(); };
     list.append(rootItem);
 
     for (const f of folders) {
       const item = document.createElement("div");
       item.className = "move-item" + (selectedFolder === f ? " on" : "");
-      item.innerHTML = `<span>📁 ${f}</span>`;
+      item.innerHTML = `<span>${iconSvg("folder", 14)} ${f}</span>`;
       item.onclick = () => { selectedFolder = f; renderItems(); };
       list.append(item);
     }
@@ -880,7 +880,7 @@ export async function openPublishDialog(onDone) {
     for (const t of S.templates) {
       const item = document.createElement("div");
       item.className = "move-item" + (chosen === t.id ? " on" : "");
-      item.innerHTML = `<span>🎨 <strong>${t.name}</strong> <small style="color:var(--faint)">(${t.id})</small></span>`;
+      item.innerHTML = `<span>${iconSvg("palette", 14)} <strong>${t.name}</strong> <small style="color:var(--faint)">(${t.id})</small></span>`;
       item.onclick = () => { chosen = t.id; renderSelect(); };
       selectList.append(item);
     }

@@ -17,6 +17,7 @@ import { openLayouts, openTemplates, openNewDeck, openMoveDialog } from "./libra
 import { present } from "./present.js";
 import { miniature } from "./preview.js";
 import { pick } from "./theme.js";
+import { iconSvg } from "./icons.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -596,14 +597,14 @@ function openDeckCardMenu(e, d, onUpdate) {
   const items = [
     {
       label: "Study (Anki mode)",
-      icon: "🧠",
+      icon: iconSvg("brain", 14),
       action: () => {
         location.hash = `#/present/${d.slug}`;
       },
     },
     {
       label: "Duplicate deck",
-      icon: "📋",
+      icon: iconSvg("copy", 14),
       action: async () => {
         const res = await fetch(`/api/deck/${d.slug}/duplicate`, {
           method: "POST",
@@ -618,7 +619,7 @@ function openDeckCardMenu(e, d, onUpdate) {
     },
     {
       label: "Rename deck",
-      icon: "✏️",
+      icon: iconSvg("pencil-simple", 14),
       action: () => {
         const next = prompt("New deck title:", d.title);
         if (next && next.trim() && next.trim() !== d.title) {
@@ -632,14 +633,14 @@ function openDeckCardMenu(e, d, onUpdate) {
     },
     {
       label: "Move to folder",
-      icon: "📁",
+      icon: iconSvg("folder", 14),
       action: () => {
         openMoveDialog(d.slug, d.title, d.folder, onUpdate);
       },
     },
     {
       label: "Delete deck",
-      icon: "🗑️",
+      icon: iconSvg("trash", 14),
       danger: true,
       action: () => {
         if (confirm(`Delete "${d.title}"? This cannot be undone.`)) {
@@ -721,11 +722,10 @@ function createDeckCard(d) {
 
   const titleDiv = Object.assign(document.createElement("div"), { className: "card-title" });
   if (d.folder && !currentFolder) {
-    const tag = Object.assign(document.createElement("span"), {
-      className: "card-folder",
-      textContent: `📁 ${d.folder}`,
-      title: `Folder: ${d.folder}. Click to filter.`,
-    });
+    const tag = document.createElement("span");
+    tag.className = "card-folder";
+    tag.innerHTML = `${iconSvg("folder", 12)} <span>${d.folder}</span>`;
+    tag.title = `Folder: ${d.folder}. Click to filter.`;
     tag.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -810,7 +810,8 @@ function paintHome(list, folders) {
         title: `Folder: ${f} (drop a deck here to file it)`,
       });
       const fLabel = document.createElement("span");
-      fLabel.textContent = `📁 ${f}`;
+      fLabel.className = "folder-label-wrap";
+      fLabel.innerHTML = `${iconSvg("folder", 12)} <span>${f}</span>`;
       const fCount = Object.assign(document.createElement("span"), {
         className: "count",
         textContent: String(count),
@@ -868,7 +869,7 @@ function paintHome(list, folders) {
       section.className = "folder-section-drop";
       const head = document.createElement("div");
       head.className = "folder-section-head";
-      head.innerHTML = `<span class="folder-section-title">📁 ${f}</span><span class="folder-section-count">${inFolder.length} deck${inFolder.length === 1 ? "" : "s"}</span>`;
+      head.innerHTML = `<span class="folder-section-title">${iconSvg("folder", 14)} <span>${f}</span></span><span class="folder-section-count">${inFolder.length} deck${inFolder.length === 1 ? "" : "s"}</span>`;
       const subgrid = document.createElement("div");
       subgrid.className = "grid";
       for (const d of inFolder) subgrid.append(createDeckCard(d));

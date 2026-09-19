@@ -1,3 +1,5 @@
+import { iconSvg } from "./icons.js";
+
 // Feynman Clarity Score & Slide Ranking Engine
 //
 // "If you can't explain it simply, you don't understand it well enough."
@@ -335,13 +337,13 @@ export function openScorePopover(slideIndex, scoreResult, onNavigate) {
       ${scoreResult.strengths.length > 0 ? `
         <div class="feedback-section positive">
           <h6>Strengths</h6>
-          <ul>${scoreResult.strengths.map((s) => `<li>✓ ${escapeHtml(s)}</li>`).join("")}</ul>
+          <ul>${scoreResult.strengths.map((s) => `<li>${iconSvg("check-circle", 13)} <span>${escapeHtml(s)}</span></li>`).join("")}</ul>
         </div>
       ` : ""}
       ${scoreResult.tips.length > 0 ? `
         <div class="feedback-section tips">
           <h6>Improvement Tips</h6>
-          <ul>${scoreResult.tips.map((t) => `<li>⚠ ${escapeHtml(t)}</li>`).join("")}</ul>
+          <ul>${scoreResult.tips.map((t) => `<li>${iconSvg("warning-circle", 13)} <span>${escapeHtml(t)}</span></li>`).join("")}</ul>
         </div>
       ` : ""}
     </div>

@@ -1191,8 +1191,37 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: .3rem;
 }
 .feedback-section li {
+  display: flex; align-items: flex-start; gap: .35rem;
   line-height: 1.4; color: var(--dim);
 }
 .feedback-section.positive li { color: var(--ok); }
 .feedback-section.tips li { color: var(--dim); }
+
+/* --- phosphor icons integration ----------------------------------------- */
+.ph {
+  display: inline-block;
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+}
+.card-menu-item .icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; margin-right: .5rem;
+}
+.card-menu-item .ph { color: currentColor; }
+.folder-label-wrap {
+  display: inline-flex; align-items: center; gap: .35rem;
+}
+.folder-section-title {
+  display: inline-flex; align-items: center; gap: .4rem;
+}
+.tag-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+}
+.move-item span {
+  display: inline-flex; align-items: center; gap: .45rem;
+}
+.pbar-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+}
+
 
