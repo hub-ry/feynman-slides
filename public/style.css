@@ -89,6 +89,7 @@ button.icon { width: 32px; height: 32px; padding: 0; justify-content: center; bo
   position: relative; }
 button.ghost { color: var(--dim); }
 button.ghost:hover { color: var(--ink); }
+button.ghost.on, button.ghost.on:hover { background: var(--active); color: var(--sel); }
 button.ghost.strong { color: var(--ink); border-color: var(--rule); border-radius: 100px; padding: .34rem .9rem; }
 button.primary {
   background: var(--sel); color: var(--onsel); border-radius: 100px;

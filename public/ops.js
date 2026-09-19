@@ -124,11 +124,33 @@ export function startEdit(id) {
 
 export function addText(role = "body", at) {
   const n = els().filter((e) => e.type === "text").length;
+  const w = role === "title" ? 560 : 420;
+  const h = role === "title" ? 80 : 96;
+  let x = at?.x ?? 80 + (n % 4) * 24;
+  let y = at?.y ?? 120 + (n % 6) * 40;
+
+  if (at) {
+    // Snap to standard margins (72, 56) or center if within 16px
+    const snapMarginX = 72, snapMarginY = 56;
+    const snapCenterX = (960 - w) / 2;
+    const snapCenterY = (540 - h) / 2;
+
+    if (Math.abs(x - snapMarginX) < 16) x = snapMarginX;
+    else if (Math.abs(x - snapCenterX) < 16) x = snapCenterX;
+
+    if (Math.abs(y - snapMarginY) < 16) y = snapMarginY;
+    else if (Math.abs(y - snapCenterY) < 16) y = snapCenterY;
+
+    // Keep comfortably within slide bounds (W=960, H=540)
+    x = Math.max(24, Math.min(x, 960 - w - 24));
+    y = Math.max(24, Math.min(y, 540 - h - 24));
+  }
+
   const el = {
     id: uid(), type: "text", role,
-    x: at?.x ?? 80 + (n % 4) * 24,
-    y: at?.y ?? 120 + (n % 6) * 40,
-    w: 420, h: role === "title" ? 80 : 96,
+    x: Math.round(x),
+    y: Math.round(y),
+    w, h,
     text: "",
   };
   edit(() => { slide().els.push(el); select(el.id); });

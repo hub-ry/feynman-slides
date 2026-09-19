@@ -8,7 +8,7 @@
 import { S, on, emit, api, save, undo, clearHistory, slide, els, elById,
          select, deselect, edit, template, loadTemplates } from "./state.js";
 import * as ops from "./ops.js";
-import { fit, paintCanvas, stopEditing, addImageFile } from "./canvas.js";
+import { fit, paintCanvas, stopEditing, addImageFile, currentPointer, armTool, getArmedTool, disarmTool } from "./canvas.js";
 import { paintRail, scaleRail } from "./rail.js";
 import { paintFormat, applyMark, toggleList } from "./format.js";
 import { paintFindings, connect, disconnect } from "./critic.js";
@@ -157,7 +157,18 @@ const KEYS = [
   { group: "Slides", key: "d", mod: true, shift: true, label: "Duplicate this slide", run: () => ops.duplicateSlide() },
   { group: "Slides", key: "Backspace", mod: true, label: "Delete this slide", run: () => ops.deleteSlide() },
 
-  { group: "On the slide", key: "t", label: "New text box", btn: "addText", run: () => ops.addText() },
+  {
+    group: "On the slide", key: "t", label: "New text box", btn: "addText",
+    run: () => {
+      const pt = currentPointer();
+      if (pt) {
+        disarmTool();
+        ops.addText("body", pt);
+      } else {
+        armTool(getArmedTool() === "text" ? null : "text");
+      }
+    },
+  },
   { group: "On the slide", key: "i", label: "Insert image", btn: "addImage", run: insertImage },
   { group: "On the slide", key: "r", label: "New shape", btn: "addShape", run: () => ops.addShape("rect") },
   { group: "On the slide", key: "Tab", label: "Select next element", show: "Tab", run: (e) => cycleSel(e.shiftKey ? -1 : 1) },
@@ -228,6 +239,7 @@ addEventListener("keydown", (e) => {
   // Escape has to work mid-sentence, because it is what you reach for when the
   // sentence went wrong - and it is the way back to the slide from any field.
   if (e.key === "Escape") {
+    if (getArmedTool()) { e.preventDefault(); disarmTool(); return; }
     if (S.editing) { e.preventDefault(); stopEditing(); return; }
     if (inField) { e.preventDefault(); document.activeElement.blur(); return; }
   }
@@ -356,12 +368,20 @@ toggleCritic(localStorage.getItem("critic") === "shut");
 
 // --- buttons --------------------------------------------------------------
 
-$("addSlide").onclick = () => ops.newSlide();
-$("layoutBtn").onclick = () => openLayouts();
-$("relayBtn").onclick = () => openLayouts({ apply: true });
-$("addText").onclick = () => ops.addText();
-$("addImage").onclick = insertImage;
-$("addShape").onclick = () => ops.addShape("rect");
+$("addSlide").onclick = () => { disarmTool(); ops.newSlide(); };
+$("layoutBtn").onclick = () => { disarmTool(); openLayouts(); };
+$("relayBtn").onclick = () => { disarmTool(); openLayouts({ apply: true }); };
+$("addText").onclick = () => {
+  if (getArmedTool() === "text") disarmTool();
+  else armTool("text");
+};
+$("addImage").onclick = () => { disarmTool(); insertImage(); };
+$("addShape").onclick = () => { disarmTool(); ops.addShape("rect"); };
+addEventListener("pointerdown", (e) => {
+  if (getArmedTool() && !$("canvas")?.contains(e.target) && !$("addText")?.contains(e.target)) {
+    disarmTool();
+  }
+});
 $("tplBtn").onclick = () => openTemplates();
 $("criticBtn").onclick = () => toggleCritic();
 $("theme").onclick = cycleTheme;

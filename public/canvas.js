@@ -21,6 +21,28 @@ function at(e) {
   return { x: (e.clientX - r.left) / S.scale, y: (e.clientY - r.top) / S.scale };
 }
 
+let hoverPointer = null;
+canvas.addEventListener("pointermove", (e) => {
+  hoverPointer = at(e);
+});
+canvas.addEventListener("pointerleave", () => {
+  hoverPointer = null;
+});
+
+export const currentPointer = () => hoverPointer;
+
+let armedTool = null;
+
+export function armTool(tool) {
+  armedTool = tool;
+  canvas.classList.toggle("placing-text", tool === "text");
+  const btn = document.getElementById("addText");
+  if (btn) btn.classList.toggle("on", tool === "text");
+}
+
+export const getArmedTool = () => armedTool;
+export const disarmTool = () => armTool(null);
+
 // --- fitting --------------------------------------------------------------
 
 export function fit() {
@@ -159,6 +181,7 @@ function mountEditor(t) {
   queueMicrotask(() => {
     editor?.focus({ preventScroll: true });
     editor?.setSelectionRange(editor.value.length, editor.value.length);
+    emit("selection");
   });
 
   let railTimer = null;
@@ -168,6 +191,7 @@ function mountEditor(t) {
     schedulePause();
     clearTimeout(railTimer);
     railTimer = setTimeout(() => emit("rail"), 400);
+    emit("selection");
   };
   editor.onblur = () => stopEditing();
   // Escape is deliberately NOT handled here. It bubbles to the one handler in
@@ -244,6 +268,16 @@ let wasSelected = null;
 
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
+
+  if (armedTool === "text") {
+    e.preventDefault();
+    e.stopPropagation();
+    const pt = at(e);
+    disarmTool();
+    ops.addText("body", pt);
+    return;
+  }
+
   dragged = false;
   wasSelected = S.sel.size === 1 ? [...S.sel][0] : null;
   const handle = e.target.closest(".handle");

@@ -209,7 +209,8 @@ function build() {
 /** Above the selection, flipped below when there is no room - and never off-screen. */
 function place() {
   if (bar.hidden) return;
-  const nodes = [...document.querySelectorAll("#canvas .el.sel")];
+  const ed = activeEditor();
+  const nodes = ed ? [ed] : [...document.querySelectorAll("#canvas .el.sel")];
   if (!nodes.length) { bar.hidden = true; return; }
   const boxes = nodes.map((n) => n.getBoundingClientRect());
   const left = Math.min(...boxes.map((b) => b.left));
