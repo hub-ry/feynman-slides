@@ -182,6 +182,7 @@ function sendFile(res: ServerResponse, path: string, root: string, isHead = fals
   res.writeHead(200, {
     "content-type": TYPES[extname(full).toLowerCase()] ?? "application/octet-stream",
     "content-length": bytes.length,
+    "cache-control": "no-cache, must-revalidate",
   });
   if (isHead) {
     res.end();
