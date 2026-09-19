@@ -936,10 +936,8 @@ addEventListener("hashchange", router);
 buildHelp();
 labelButtons();
 
-// First load with no route: back to the deck you were last in, because that is
-// where you left off. Home is what you get when there is nothing to go back to.
+// First load with no route lands on the home page listing your decks.
 if (!location.hash) {
-  const last = localStorage.getItem("deck");
-  location.replace(last ? `#/deck/${last}` : "#/");
+  location.replace("#/");
 }
 router();
