@@ -15,6 +15,12 @@ export const PHOSPHOR_ICONS = {
     <path d="M88,88h40"/>
   `,
 
+  question: `
+    <circle cx="128" cy="128" r="96"/>
+    <path d="M100,100a28,28,0,1,1,36,26.9V144"/>
+    <circle cx="136" cy="180" r="2" fill="currentColor" stroke-width="12"/>
+  `,
+
   copy: `
     <rect x="40" y="40" width="136" height="136" rx="8"/>
     <path d="M80,80v128a8,8,0,0,0,8,8H216a8,8,0,0,0,8-8V88a8,8,0,0,0-8-8H88"/>

@@ -117,18 +117,19 @@ export function paintRail() {
   const header = document.createElement("div");
   header.className = "rail-header";
 
+  // A count of work remaining, not a mark. There is no deck grade any more and
+  // deliberately so - see the header comment in score.js, and section 2 of
+  // docs/research.md for the meta-analysis that took it out.
   const clarityBtn = document.createElement("button");
   clarityBtn.type = "button";
-  clarityBtn.className = "rail-deck-score";
+  clarityBtn.className = "rail-deck-score" + (deckClarity.openSlides ? " has-open" : "");
   clarityBtn.title = deckClarity.rated
-    ? `Deck Feynman Clarity: ${deckClarity.averageScore}/100 across ${deckClarity.rated} written slide${deckClarity.rated > 1 ? "s" : ""} (${deckClarity.summary}). Click for the current slide's breakdown.`
-    : "Nothing written yet. The clarity score starts once a slide has words on it.";
-  clarityBtn.innerHTML = `
-    <span class="score-dot" style="background:${deckClarity.color}"></span>
-    <span class="score-lbl">Clarity</span>
-    <strong class="score-num" style="color:${deckClarity.color}">${deckClarity.averageScore}</strong>
-    <span class="score-grd">${deckClarity.grade}</span>
-  `;
+    ? `${deckClarity.summary}. Click for this slide's checks.`
+    : "Nothing written yet. The checks start once a slide has words on it.";
+  clarityBtn.innerHTML = deckClarity.rated && deckClarity.openSlides
+    ? `<strong class="score-num">${deckClarity.openSlides}</strong>
+       <span class="score-lbl">slide${deckClarity.openSlides === 1 ? "" : "s"} to revisit</span>`
+    : `<span class="score-lbl">${deckClarity.rated ? "Nothing open" : "Nothing written yet"}</span>`;
   clarityBtn.onclick = () => {
     const curSlide = S.deck.slides[S.idx];
     if (curSlide) {
@@ -145,7 +146,7 @@ export function paintRail() {
   const rankBtn = document.createElement("button");
   rankBtn.type = "button";
   rankBtn.className = "rail-icon-btn" + (rankMode ? " active" : "");
-  rankBtn.title = rankMode ? "Sorted: Weakest clarity first (click to reset order)" : "Sort slides by clarity (weakest first)";
+  rankBtn.title = rankMode ? "Sorted: most left open first (click to reset order)" : "Sort slides by what is still open";
   rankBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18M6 12h12M9 18h6"/></svg>`;
   rankBtn.onclick = () => {
     rankMode = !rankMode;
@@ -155,7 +156,7 @@ export function paintRail() {
   const toggleBtn = document.createElement("button");
   toggleBtn.type = "button";
   toggleBtn.className = "rail-icon-btn" + (showScores ? " active" : "");
-  toggleBtn.title = showScores ? "Hide clarity badges on slides" : "Show clarity badges on slides";
+  toggleBtn.title = showScores ? "Hide the check badges on slides" : "Show the check badges on slides";
   toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
   toggleBtn.onclick = () => {
     showScores = !showScores;
@@ -170,7 +171,7 @@ export function paintRail() {
   if (rankMode) {
     const rankNotice = document.createElement("div");
     rankNotice.className = "rail-rank-notice";
-    rankNotice.innerHTML = `<span>Ranked: Weakest First</span><button class="rank-reset-btn" type="button">Reset</button>`;
+    rankNotice.innerHTML = `<span>Ranked: most open first</span><button class="rank-reset-btn" type="button">Reset</button>`;
     rankNotice.querySelector(".rank-reset-btn").onclick = () => {
       rankMode = false;
       paintRail();
@@ -223,10 +224,17 @@ export function paintRail() {
       const st = standing(s);
       scoreBadge.className = `score-badge tier-${scoreResult.tier}` + (st === "stale" || st === "reading" ? " unsettled" : "");
       scoreBadge.title = scoreResult.rated
-        ? `Feynman Clarity: ${scoreResult.score}/100 (${scoreResult.summary})`
-          + (st === "current" ? ". Click for breakdown." : ". The critic has not read this version yet.")
+        ? scoreResult.checks
+            .filter((c) => c.state === "open")
+            .map((c) => `${c.label}: ${c.says}`)
+            .join("\n") || "Nothing open on this slide."
         : "Nothing written on this slide yet.";
-      scoreBadge.textContent = scoreResult.rated ? scoreResult.score : "–";
+      // The number is how much is left to do, so an empty slide and a settled
+      // one are not both "–" and a settled one is not a bigger number than a
+      // broken one. Low is good here, which is the opposite of the old score
+      // and the reason the badge shows a dot rather than a digit when it is
+      // clear.
+      scoreBadge.textContent = !scoreResult.rated ? "–" : scoreResult.open || "";
       scoreBadge.onclick = (e) => {
         e.stopPropagation();
         openScorePopover(i, scoreResult, () => ops.go(i));
