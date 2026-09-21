@@ -14,9 +14,10 @@ import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod";
 import type { Slide, Source } from "./deck.ts";
 import { readable, slideKey, uid } from "./deck.ts";
+import { longestBorrowedRun } from "../public/readable.js";
 import { type CriticConfig, readCriticConfig } from "./store.ts";
 
-export type Severity = "error" | "jargon" | "note";
+export type Severity = "error" | "jargon" | "note" | "probe";
 
 export type Finding = {
   id: string;
@@ -38,7 +39,7 @@ Your whole job is to stop them from writing a slide they cannot defend. A slide
 that looks finished and is subtly wrong is the worst outcome this tool can
 produce, because they will study from it.
 
-THE THREE SEVERITIES
+THE FOUR SEVERITIES
 
   error   Factually wrong, or a claim the pasted source material contradicts.
           This blocks their export. Be certain before you use it.
@@ -54,6 +55,18 @@ THE THREE SEVERITIES
   note    Ordering, length, phrasing, a slide trying to hold two concepts.
           Never blocks. Use it sparingly.
 
+  probe   A QUESTION about a slide that is fine. Not a defect - the opposite.
+          When the slide is correct and the mechanism is really on it, the
+          most useful thing a reader can do is ask why it is true, what it is
+          true INSTEAD of, or what happens at the edge where it stops being
+          true. Never blocks. At most one per slide, and only on a slide with
+          nothing else wrong with it. If you are raising an error or a jargon
+          finding, you are not also raising a probe.
+
+          Put the question in "problem" and leave "fix_hint" for where they
+          would go to answer it. Ask about the specific claim in front of you,
+          never "have you considered the broader context".
+
 BASIS - say where your confidence comes from
   basis="source"     the pasted source material settles this
   basis="knowledge"  no source covers it, this is your own knowledge
@@ -64,21 +77,37 @@ professor. Their notation is not wrong for disagreeing with yours. Hold the
 error severity for things that are wrong in any notation, and prefer a note
 when you are reaching.
 
+THE READER
+
+The deck names who it is being written for. That reader is the whole test for
+jargon: "quorum" is an explanation to a distributed systems PhD and is not one
+to a first-year six weeks before an exam, and the word is identical in both
+cases. Judge every term against the named reader, not against yourself, and
+not against a generic novice.
+
+If the deck names no reader, judge against the writer six weeks from now, with
+the lecture forgotten and the slide in front of them.
+
 RULES
 - Quote the exact bullet you mean, verbatim. A finding they cannot locate is
   noise.
 - fix_hint points at what to go find out. Never write the corrected bullet for
   them. If you hand them the sentence, they paste it in and learn nothing, and
   this whole tool becomes a slower way to have you write their slides.
-- A slide that is fine gets an empty findings list. Say nothing. Most passes
-  should be empty once they are writing well, and a critic that always finds
-  something is a critic they learn to scroll past.
+- A slide with nothing wrong with it gets no defects. Most passes should
+  report none once they are writing well, and a critic that always finds
+  something is a critic they learn to scroll past. A probe is not an exception
+  to this: it is what you may do INSTEAD of inventing a defect, and you are
+  allowed exactly one, only when the slide is finished and correct.
 - An in-progress bullet is not a wrong bullet. They are typing. Half a sentence
   is not an error.
 - If they DISMISSED a finding and gave a reason, you were told about it. Do not
-  raise it again. They may be right; you were working from your own knowledge.`;
+  raise it again. They may be right; you were working from your own knowledge.
+- If a line on the slide is a long verbatim run out of the source bin, that is
+  a paste, and a paste is the failure this tool exists to catch even when
+  every word of it is true. Raise it as jargon and quote the run.`;
 
-const SEVERITY = z.enum(["error", "jargon", "note"]);
+const SEVERITY = z.enum(["error", "jargon", "note", "probe"]);
 
 export type CriticProvider = "auto" | "gemini" | "openai" | "local" | "claude" | "heuristic";
 export type CriticMode = CriticProvider;
@@ -276,6 +305,52 @@ export function heuristicReview(
     }
   }
 
+  // 2b. The paste.
+  //
+  //     A long verbatim run out of the bin is the failure this tool exists to
+  //     catch, even when every word of it is true. The Feynman move in step 2
+  //     is restating the idea in words that are NOT the source's words, so
+  //     overlap with the lecture is the signature of not having done it. The
+  //     old clarity score had this exactly backwards and paid twenty points
+  //     out of a hundred for it.
+  //
+  //     A note rather than a block. Sometimes a definition or a statement of
+  //     a law has to be quoted, and a false positive that holds your export
+  //     is much worse than one that does not.
+  let pasted = false;
+  const borrowed = longestBorrowedRun(
+    allLines.join(" ").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean),
+    sources,
+  ) as { run: number; text: string; label: string };
+  if (firm && borrowed.run > 0) {
+    // The line the run is actually IN, not the first line sharing a word with
+    // it. Matching on the first word alone quoted the heading at someone
+    // whose paste was four bullets down, and a finding you cannot locate is
+    // the one thing the contract says a finding must never be.
+    const flat = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+    const quote =
+      allLines.find((l) => flat(l).includes(borrowed.text)) ??
+      allLines.reduce((best, l) => (flat(l).length > flat(best).length ? l : best), allLines[0]!);
+    if (!isDismissed(quote)) {
+      // Deliberately NOT added to `settled`. That set means "this line already
+      // has a finding, do not pile on", and it is right for the error checks,
+      // which are alternatives to each other. A paste and a name standing in
+      // for a mechanism are not alternatives - the pasted line above says
+      // both at once - and suppressing the jargon call here quietly dropped
+      // the finding that actually blocks the export.
+      pasted = true;
+      findings.push({
+        id: uid(),
+        severity: "note",
+        quote,
+        problem: `${borrowed.run} words running straight out of ${borrowed.label || "the source bin"}: "${borrowed.text}". Copying the phrasing is how a slide looks finished without being understood - the whole move is saying it in words that are not your source's words.`,
+        fix_hint: "Close the bin and write the line again from memory. Whatever you cannot say without it is the part you have not got yet.",
+        basis: "source",
+        slideKey: slideKeyStr,
+      });
+    }
+  }
+
   // 3. The Feynman jargon test, as the contract states it: not "is this word
   //    technical" but "would deleting it remove the only explanation here".
   //
@@ -319,7 +394,88 @@ export function heuristicReview(
     });
   }
 
+  // 4. Elaborative interrogation, on a slide with nothing wrong with it.
+  //
+  //    Dunlosky et al. put prompting for the causal "why" behind a stated
+  //    fact at d = 0.85-2.57, among the largest effects in the set, and every
+  //    other branch above reports a DEFECT. A critic whose only register is
+  //    objection reads as hostile at any politeness level, because objection
+  //    is all it can structurally do.
+  //
+  //    Only on the firm pass, only when nothing is blocking, and exactly one.
+  //    Asking someone to go deeper on a slide that is still wrong is noise,
+  //    and a second question is a quiz.
+  if (firm && !pasted && !findings.some((f) => f.severity === "error" || f.severity === "jargon")) {
+    const probe = askWhy(allLines);
+    if (probe && !isDismissed(probe.quote)) findings.push({ ...probe, id: uid(), slideKey: slideKeyStr });
+  }
+
   return findings;
+}
+
+/**
+ * One question about a slide that is already fine.
+ *
+ * Picked off the shape of the claim rather than its subject, because a local
+ * heuristic cannot know the subject and a question that could be asked of any
+ * slide is a fortune cookie. A comparison has something it is being compared
+ * against. A bound has something that makes it that bound. A mechanism has a
+ * point where it stops working. Those are three real questions and this can
+ * tell which one applies from the words alone.
+ *
+ * Returns nothing when none of them fits, which is the right answer more
+ * often than not. Silence beats a generic prompt.
+ */
+function askWhy(lines: string[]): Omit<Finding, "id" | "slideKey"> | null {
+  // The heading states the topic; the claim worth interrogating is underneath.
+  const claims = lines.slice(1).filter((l) => l.split(/\s+/).length >= 6);
+  if (!claims.length) return null;
+
+  const pick = <T,>(xs: T[]) => xs[xs.length - 1]!;
+
+  const comparison = claims.find((l) =>
+    /\b(faster|slower|better|worse|cheaper|more|less|fewer|stronger|weaker|safer|higher|lower)\b/i.test(l),
+  );
+  if (comparison) {
+    return {
+      severity: "probe",
+      quote: comparison,
+      problem: "Faster, better or cheaper than what, exactly? A comparison with the other side left off is the easiest kind of claim to hold and the hardest to defend.",
+      fix_hint: "Name the thing you are comparing against, and name what it costs you - the case where the comparison goes the other way is usually the one on the exam.",
+      basis: "knowledge",
+    };
+  }
+
+  const bound = claims.find((l) => /O\([^)]*\)|\b\d+\s*(?:%|x|ms|s|MB|GB|bits?|bytes?)\b/i.test(l));
+  if (bound) {
+    return {
+      severity: "probe",
+      quote: bound,
+      problem: "Where does that number come from? A bound you can state and cannot derive is a bound you will misremember under pressure.",
+      fix_hint: "Work it out on paper once: what is being counted, and what would have to change for the number to be different?",
+      basis: "knowledge",
+    };
+  }
+
+  const mechanism = claims.find((l) => MECHANISM.test(l));
+  if (mechanism) {
+    return {
+      severity: "probe",
+      quote: mechanism,
+      problem: "What breaks this? Every mechanism has a case it does not handle, and the edge is usually where the understanding actually lives.",
+      fix_hint: "Find the input, the load or the failure that makes this stop working, and what is done about it instead.",
+      basis: "knowledge",
+    };
+  }
+
+  const last = pick(claims);
+  return {
+    severity: "probe",
+    quote: last,
+    problem: "Why is this true rather than the obvious alternative? You can state it. Can you say what the world would look like if it were false?",
+    fix_hint: "Write the one sentence that rules out the alternative. If you cannot, that is the sentence to go and find.",
+    basis: "knowledge",
+  };
 }
 
 /** Parse JSON response from any LLM provider into valid Feynman findings. */
@@ -336,7 +492,7 @@ export function parseFindingsJson(text: string): Array<Omit<Finding, "id" | "sli
     return list.map((item: any) => {
       let severity: Severity = "note";
       const s = String(item?.severity || "").toLowerCase().trim();
-      if (s === "error" || s === "jargon" || s === "note") severity = s;
+      if (s === "error" || s === "jargon" || s === "note" || s === "probe") severity = s;
 
       let basis: "source" | "knowledge" = "knowledge";
       const b = String(item?.basis || "").toLowerCase().trim();
@@ -629,6 +785,10 @@ export function startCritic(
    * be worth doing once.
    */
   alreadyDisputed: Finding[] = [],
+  /** Who the deck is being explained to. Fixed for the life of the session - the
+   *  server closes and reopens it when the reader changes, because everything
+   *  the critic decided about jargon was decided against the old one. */
+  audience?: string,
 ): CriticSession {
   const pending = { deliver: null as ((text: string) => void) | null };
   let closed = false;
@@ -850,7 +1010,7 @@ export function startCritic(
     const sources_ = now === sentBin ? "The source bin is unchanged from what you were shown earlier. Use it." : now;
     sentBin = now;
 
-    const userPrompt = `${rejected}${bar}\n\n${render(slide)}\n\n${sources_}\n\nReview this slide and report findings.`;
+    const userPrompt = `${rejected}${reader(audience)}\n\n${bar}\n\n${render(slide)}\n\n${sources_}\n\nReview this slide and report findings.`;
 
     // 2. Google Gemini
     if (resolvedProviderType === "gemini") {
@@ -1006,6 +1166,14 @@ function render(slide: Slide): string {
   const { title, body } = readable(slide);
   const lines = body.length ? body.map((b) => `- ${b}`).join("\n") : "(nothing written yet)";
   return `SLIDE HEADING: ${title || "(none)"}\n\nTEXT ON THIS SLIDE:\n${lines}`;
+}
+
+/** The named reader, or the default the contract falls back to. See deck.ts. */
+function reader(audience?: string): string {
+  const who = audience?.trim();
+  return who
+    ? `THE READER FOR THIS DECK: ${who}\n\nJudge every term against that reader.`
+    : "THE READER FOR THIS DECK: not named. Judge against the writer six weeks\nfrom now, with the lecture forgotten.";
 }
 
 function bin(sources: Source[]): string {

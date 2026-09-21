@@ -81,3 +81,79 @@ export function stillApplies(finding, slide) {
   if (!q) return true; // nothing to check it against; the critic owes us a quote
   return slideText(slide).includes(q);
 }
+
+/**
+ * Which severities hold the export.
+ *
+ * One definition because three places used to answer it by hand, and two of
+ * them answered it as `severity !== "note"`. That was true while there were
+ * exactly three severities and became a bug the moment there were four: the
+ * `probe` - a question about a slide that is FINE - would have blocked the
+ * export it was asking you to think harder about.
+ *
+ * Errors and jargon block, deliberately. Naming a thing instead of explaining
+ * it is the failure the Feynman technique exists to catch, and the one that
+ * feels most like understanding while you are doing it.
+ */
+export const BLOCKING = new Set(["error", "jargon"]);
+
+/** True when this finding is one of the two that stand between you and an export. */
+export const blocks = (finding) => !finding?.dismissed && BLOCKING.has(finding?.severity);
+
+/**
+ * The longest run of words the slide and a source have in common.
+ *
+ * This is the copy-paste detector, and it is pointed the opposite way from
+ * what you might expect. Overlap with your lecture notes is not evidence you
+ * understood the lecture - the Feynman move is restating the idea in words
+ * that are NOT the source's words, so a long verbatim run is the signature of
+ * the failure rather than of grounding. The old score gave twenty points out
+ * of a hundred for word overlap, which meant a slide that was a straight
+ * paste scored full marks on the dimension that was supposed to catch it.
+ *
+ * Runs, not bags of words. Sharing "hash" and "collision" with your professor
+ * is unavoidable and fine; sharing eleven consecutive words is a clipboard.
+ *
+ * Returns { run, text, label } for the longest match, run = 0 when there is
+ * nothing worth reporting.
+ */
+export function longestBorrowedRun(slideWords, sources, floor = 7) {
+  const norm = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+
+  const mine = Array.isArray(slideWords) ? slideWords.map((w) => String(w).toLowerCase()) : norm(slideWords);
+  let best = { run: 0, text: "", label: "" };
+  if (mine.length < floor) return best;
+
+  for (const source of sources || []) {
+    const theirs = norm(`${source.title || ""} ${source.text || ""}`);
+    if (theirs.length < floor) continue;
+
+    // Where each word appears in the source, so the scan below only starts
+    // runs at positions that can actually begin one. A bin holding a 60-page
+    // lecture times thirty slides times every repaint is the shape of thing
+    // that is fine until someone uploads a real course.
+    const at = new Map();
+    for (let j = 0; j < theirs.length; j++) {
+      const list = at.get(theirs[j]);
+      if (list) list.push(j);
+      else at.set(theirs[j], [j]);
+    }
+
+    for (let i = 0; i < mine.length; i++) {
+      for (const start of at.get(mine[i]) ?? []) {
+        let n = 0;
+        while (i + n < mine.length && start + n < theirs.length && mine[i + n] === theirs[start + n]) n++;
+        if (n > best.run) {
+          best = { run: n, text: mine.slice(i, i + n).join(" "), label: source.label || "" };
+        }
+      }
+    }
+  }
+
+  return best.run >= floor ? best : { run: 0, text: "", label: "" };
+}

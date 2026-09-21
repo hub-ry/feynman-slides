@@ -10,7 +10,7 @@
 
 import { S, api, save, emit, on, slide } from "./state.js";
 import { iconSvg } from "./icons.js";
-import { slideDigest, stillApplies, hasText } from "./readable.js";
+import { slideDigest, stillApplies, hasText, blocks } from "./readable.js";
 import { openCriticSetupModal } from "./library.js";
 
 const $ = (id) => document.getElementById(id);
@@ -131,14 +131,11 @@ export function disconnect() { stream?.close(); stream = null; }
 
 /** The quotes the critic flagged, so the box on the slide can underline itself. */
 export function flagged() {
-  return liveOn(slide())
-    .filter((f) => !f.dismissed && f.severity !== "note")
-    .map((f) => f.quote);
+  return liveOn(slide()).filter(blocks).map((f) => f.quote);
 }
 
 /** How many unresolved findings a slide is carrying, for the rail's flag. */
-export const openOn = (slide) =>
-  liveOn(slide).filter((f) => !f.dismissed && f.severity !== "note").length;
+export const openOn = (slide) => liveOn(slide).filter(blocks).length;
 
 /**
  * What stands between this deck and an export, counted here rather than taken
@@ -234,7 +231,11 @@ function card(f, slideIndex, goTo) {
   const dot = document.createElement("span");
   dot.className = "sev-pip";
   sevBadge.append(dot);
-  const sevText = f.severity === "error" ? "Conflict" : f.severity === "jargon" ? "Jargon" : "Note";
+  const sevText =
+    f.severity === "error" ? "Conflict"
+    : f.severity === "jargon" ? "Jargon"
+    : f.severity === "probe" ? "Question"
+    : "Note";
   sevBadge.append(document.createTextNode(sevText));
   left.append(sevBadge);
 
@@ -249,7 +250,7 @@ function card(f, slideIndex, goTo) {
   const right = document.createElement("div");
   right.className = "finding-meta-right";
 
-  if (!f.dismissed && f.severity !== "note") {
+  if (blocks(f)) {
     const blk = document.createElement("span");
     blk.className = "block-badge";
     blk.title = "Blocks export until resolved or disputed";
@@ -418,7 +419,7 @@ export function paintFindings(goTo) {
 
   const allLive = S.deck.slides.flatMap((s) => liveOn(s));
   const allActive = allLive.filter((f) => !f.dismissed);
-  const blockingCount = allActive.filter((f) => f.severity !== "note").length;
+  const blockingCount = allActive.filter(blocks).length;
 
   // Titlebar badge
   const titleBadge = $("criticCount");
@@ -436,8 +437,12 @@ export function paintFindings(goTo) {
       statusPill.className = "critique-status-pill blocking";
       statusPill.textContent = `${blockingCount} blocking`;
     } else if (allActive.length > 0) {
-      statusPill.className = "critique-status-pill note";
-      statusPill.textContent = `${allActive.length} note${allActive.length > 1 ? "s" : ""}`;
+      const probes = allActive.filter((f) => f.severity === "probe").length;
+      statusPill.className = "critique-status-pill " + (probes === allActive.length ? "probe" : "note");
+      statusPill.textContent =
+        probes === allActive.length
+          ? `${probes} question${probes > 1 ? "s" : ""}`
+          : `${allActive.length} note${allActive.length > 1 ? "s" : ""}`;
     } else {
       statusPill.className = "critique-status-pill clean";
       statusPill.textContent = "All clear";
