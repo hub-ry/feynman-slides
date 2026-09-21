@@ -15,7 +15,8 @@ import {
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Finding } from "./critic.ts";
-import { type Deck, blankDeck, slideKey, slideDigest, stillApplies, migrate } from "./deck.ts";
+import { type Deck, blankDeck, slideKey, slideDigest, stillApplies, migrate, hasText, blocks } from "./deck.ts";
+import { type Memory, newMemory, isDue } from "./recall.ts";
 
 export const HOME = process.env.FEYNMAN_SLIDES_HOME ?? join(homedir(), ".feynman-slides");
 export const DECKS = join(HOME, "decks");
@@ -79,6 +80,7 @@ export const dir = (slug: string) => join(DECKS, slug);
 const deckPath = (slug: string) => join(dir(slug), "deck.json");
 const statePath = (slug: string) => join(dir(slug), "critiques.json");
 export const imageDir = (slug: string) => join(dir(slug), "images");
+const recallPath = (slug: string) => join(dir(slug), "recall.json");
 
 export type Card = {
   slug: string;
@@ -87,6 +89,8 @@ export type Card = {
   folder?: string;
   slides: number;
   blocking: number;
+  /** Slides whose recall is due now. The reason to reopen a deck you finished. */
+  due: number;
   updated: number;
   /** The first slide's elements, so the home page can show the deck rather than its initial. */
   first: unknown[];
@@ -112,6 +116,7 @@ export function list(): Card[] {
         slides: deck.slides.length,
         first: deck.slides[0]?.els ?? [],
         blocking: blocking(prune(deck, readState(e.name))).length,
+        due: dueSlides(deck, readRecall(e.name)).length,
         updated: statSync(deckPath(e.name)).mtimeMs,
       };
     })
@@ -313,9 +318,7 @@ export function isCurrent(state: State, slide: Parameters<typeof slideKey>[0]): 
  * one that feels most like understanding while you are doing it.
  */
 export function blocking(state: State): Finding[] {
-  return Object.values(state.findings)
-    .flat()
-    .filter((f) => !f.dismissed && (f.severity === "error" || f.severity === "jargon"));
+  return Object.values(state.findings).flat().filter(blocks);
 }
 
 export function saveImage(slug: string, name: string, bytes: Buffer): string {
@@ -327,6 +330,70 @@ export function saveImage(slug: string, name: string, bytes: Buffer): string {
 
 export function deleteDeck(slug: string): void {
   rmSync(dir(slug), { recursive: true, force: true });
+}
+
+/**
+ * When each slide comes back, kept beside the deck rather than inside it.
+ *
+ * Same reason the critiques are a sidecar: this is a record of what YOU did,
+ * and losing it must never be able to cost you your slides. It is also the
+ * one file here that is genuinely expensive to recreate - a deck can be
+ * rewritten in an evening, six weeks of review history cannot be.
+ */
+export type Recall = {
+  /** By slide id. Slides with no memory yet have simply never been studied. */
+  memories: Record<string, Memory>;
+  /** ISO of the last graded slide, for the streak line on the home page. */
+  lastStudied?: string;
+};
+
+const NO_RECALL: Recall = { memories: {} };
+
+export function readRecall(slug: string): Recall {
+  const p = recallPath(slug);
+  if (!existsSync(p)) return structuredClone(NO_RECALL);
+  try {
+    const parsed = JSON.parse(readFileSync(p, "utf8"));
+    return { memories: parsed.memories ?? {}, lastStudied: parsed.lastStudied };
+  } catch {
+    return structuredClone(NO_RECALL);
+  }
+}
+
+export function writeRecall(slug: string, recall: Recall): void {
+  mkdirSync(dir(slug), { recursive: true });
+  writeFileSync(recallPath(slug), JSON.stringify(recall, null, 2) + "\n");
+}
+
+/**
+ * Drop the memory of slides that no longer exist.
+ *
+ * Unlike a stale finding this is not urgent - an orphaned memory is invisible
+ * rather than wrong - but a deck you have rewritten twice would otherwise
+ * carry a due count for slides nobody can open.
+ */
+export function pruneRecall(deck: Deck, recall: Recall): Recall {
+  const live = new Set(deck.slides.map(slideKey));
+  for (const key of Object.keys(recall.memories)) {
+    if (!live.has(key)) delete recall.memories[key];
+  }
+  return recall;
+}
+
+/**
+ * Which slides are worth asking about right now.
+ *
+ * A slide with nothing written on it is not a card. Neither is a slide whose
+ * only text is its heading: there would be nothing to recall, and the
+ * "reveal" would show you the prompt again. The schedule is only ever built
+ * from slides that actually say something, which is also why the app never
+ * has to ask you to author a card - you already did, by writing the slide.
+ */
+export function dueSlides(deck: Deck, recall: Recall, now: Date = new Date()): string[] {
+  return deck.slides
+    .filter((s) => hasText(s) && s.els.filter((e) => e.type === "text" && e.text?.trim()).length > 1)
+    .filter((s) => isDue(recall.memories[slideKey(s)] ?? newMemory(now), now))
+    .map(slideKey);
 }
 
 export type CriticConfig = {

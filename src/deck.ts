@@ -81,6 +81,24 @@ export type Source = {
 export type Deck = {
   title: string;
   slides: Slide[];
+  /**
+   * Who you are explaining this to.
+   *
+   * One sentence, and it is not decoration. Kobayashi's meta-analysis of
+   * learning-by-teaching found that teaching after studying WITHOUT the
+   * expectation of teaching did not differ from not teaching at all; with the
+   * expectation in place the benefit was g = 0.48. The reader is the
+   * condition, not the audience.
+   *
+   * It is also what makes the critic's central judgement answerable. "Does
+   * this term stand in for a mechanism" has no answer in the abstract -
+   * "quorum" explains plenty to a distributed systems PhD and nothing to you
+   * in six weeks - so without a named reader the critic was inventing one per
+   * slide, which is why its jargon calls read as arbitrary.
+   *
+   * See docs/research.md section 4.
+   */
+  audience?: string;
   /** The installed template this deck is drawn with. */
   template?: string;
   /** An optional folder or class this deck belongs to. */
@@ -148,6 +166,10 @@ export function text(
 export function migrate(deck: Deck): Deck {
   deck.sources ??= [];
   deck.template ??= "feynman";
+  // Decks written before there was a reader do not get one invented for them.
+  // An audience you did not choose is not an expectation, and a placeholder
+  // here would quietly turn the editor's prompt off for every existing deck.
+  if (typeof deck.audience === "string" && !deck.audience.trim()) delete deck.audience;
   for (const s of deck.slides) {
     // Notes used to hang off each slide. Everything anyone wrote in one is
     // source material, so it moves to the bin rather than being dropped.
@@ -172,7 +194,7 @@ export function migrate(deck: Deck): Deck {
  * browser needs the same answer: it is what tells the review pane whether the
  * critique it is showing is still about the words on the slide.
  */
-export { readable, slideText, slideDigest, hasText, stillApplies } from "../public/readable.js";
+export { readable, slideText, slideDigest, hasText, stillApplies, BLOCKING, blocks } from "../public/readable.js";
 
 /** Stable identity for a slide. Its own id, so renaming a heading does not orphan its findings. */
 export const slideKey = (slide: Slide): string => slide.id;

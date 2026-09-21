@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { startCritic, type CriticSession, type Finding, resolveProvider, testCriticConnection } from "./critic.ts";
 import { type Deck, slideKey, slideDigest, hasText, uid } from "./deck.ts";
 import * as store from "./store.ts";
+import { type Rating, RATINGS, newMemory, grade, preview, retrievability, human } from "./recall.ts";
 import { exportDeck, Blocked } from "./export.ts";
 import * as templates from "./templates.ts";
 
@@ -38,8 +39,12 @@ function open(slug: string, title: string): Live {
     // The critic is handed what it has already been corrected about. A dispute
     // is written down once and has to hold across restarts.
     const disputed = store.readState(slug).dismissed;
+    // Who the deck is for is fixed for the life of the session. Changing it
+    // closes the session (see the audience route), because every jargon call
+    // the critic has made was made against the previous reader.
+    const audience = store.readDeck(slug).audience;
     d = {
-      critic: startCritic(title, undefined, disputed),
+      critic: startCritic(title, undefined, disputed, audience),
       clients: new Set(),
       reviewing: new Set(),
       queued: new Map(),
@@ -527,6 +532,110 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     live.get(slug)?.critic.close();
     live.delete(slug);
     return json(res, 200, { blocking: store.blocking(state).length });
+  }
+
+  /**
+   * The recall schedule for this deck.
+   *
+   * Sent whole rather than one card at a time. A deck is thirty slides, the
+   * whole schedule is a few kilobytes, and a study session that has to round
+   * trip between every card is a study session with a spinner in the middle
+   * of it - which is the one place this tool cannot afford one, because the
+   * pause between "I think I know this" and seeing the answer is the part
+   * that does the work.
+   */
+  if (req.method === "GET" && action === "recall") {
+    const deck = store.readDeck(slug);
+    const recall = store.pruneRecall(deck, store.readRecall(slug));
+    store.writeRecall(slug, recall);
+    const now = new Date();
+    const due = store.dueSlides(deck, recall, now);
+    return json(res, 200, {
+      memories: recall.memories,
+      due,
+      lastStudied: recall.lastStudied,
+      /**
+       * How likely you are to still have each slide, right now.
+       *
+       * Sent alongside rather than computed in the browser so there is one
+       * implementation of the forgetting curve rather than two that drift.
+       */
+      retrievability: Object.fromEntries(
+        Object.entries(recall.memories).map(([k, m]) => [k, retrievability(m, now)]),
+      ),
+    });
+  }
+
+  /**
+   * Grade one slide.
+   *
+   * The reply carries the next four intervals as well as the new state,
+   * because the buttons in the study session are labelled with what they will
+   * cost you. Telling someone that Good means eight days and Hard means two
+   * is the only part of the memory model worth putting on screen.
+   */
+  if (req.method === "POST" && action === "recall") {
+    const { slideId, rating } = await body(req);
+    const r = Number(rating) as Rating;
+    if (!RATINGS.includes(r)) {
+      return json(res, 400, { error: "rating must be 1 (again), 2 (hard), 3 (good) or 4 (easy)" });
+    }
+    const deck = store.readDeck(slug);
+    if (!deck.slides.some((sl) => sl.id === String(slideId))) {
+      return json(res, 404, { error: "no such slide" });
+    }
+
+    const now = new Date();
+    const recall = store.pruneRecall(deck, store.readRecall(slug));
+    const before = recall.memories[String(slideId)] ?? newMemory(now);
+    const after = grade(before, r, now);
+
+    recall.memories[String(slideId)] = after;
+    recall.lastStudied = now.toISOString();
+    store.writeRecall(slug, recall);
+
+    const next = preview(after, new Date(after.due));
+    return json(res, 200, {
+      memory: after,
+      wait: human(new Date(after.due).getTime() - now.getTime()),
+      next: Object.fromEntries(RATINGS.map((g) => [g, human(next[g])])),
+      due: store.dueSlides(deck, recall, now),
+    });
+  }
+
+  /**
+   * What each button would cost, before any of them is pressed.
+   *
+   * Separate from the grade so the study session can label its buttons
+   * without having pressed one.
+   */
+  if (req.method === "GET" && action === "schedule") {
+    const deck = store.readDeck(slug);
+    const recall = store.readRecall(slug);
+    const now = new Date();
+    const out: Record<string, Record<number, string>> = {};
+    for (const sl of deck.slides) {
+      const m = recall.memories[sl.id] ?? newMemory(now);
+      const p = preview(m, now);
+      out[sl.id] = Object.fromEntries(RATINGS.map((g) => [g, human(p[g])])) as Record<number, string>;
+    }
+    return json(res, 200, out);
+  }
+
+  /** One sentence naming who this deck is being explained to. See deck.ts. */
+  if (req.method === "POST" && action === "audience") {
+    const { audience } = await body(req);
+    const deck = store.readDeck(slug);
+    const text = String(audience ?? "").trim().slice(0, 240);
+    if (text) deck.audience = text;
+    else delete deck.audience;
+    store.writeDeck(slug, deck);
+    // The critic was told who it was reading for when the session opened, so
+    // changing the reader has to start it over. Everything it decided about
+    // jargon was decided against the old one.
+    live.get(slug)?.critic.close();
+    live.delete(slug);
+    return json(res, 200, { ok: true, audience: deck.audience });
   }
 
   if (req.method === "GET" && action === "export") {
