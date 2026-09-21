@@ -83,6 +83,11 @@ export function openRecall(slug, deck, template, onClose) {
   const slidesById = new Map((deck?.slides ?? []).map((s) => [s.id, s]));
 
   let queue = [];
+  // Not due, weakest memory first. Only ever offered once the queue is
+  // empty, and never mixed into it: a session that quietly kept going
+  // would stop meaning "you are caught up" when it ended.
+  let ahead = [];
+  let studyingAhead = false;
   let schedule = {};
   let memories = {};
   let currentSlide = null;
@@ -231,6 +236,7 @@ export function openRecall(slug, deck, template, onClose) {
 
       // Server returns due in most-overdue order. Only keep slides that exist.
       queue = (recallData.due || []).filter((id) => slidesById.has(id));
+      ahead = (recallData.ahead || []).filter((id) => slidesById.has(id));
 
       if (queue.length === 0) {
         showDone();
@@ -250,7 +256,8 @@ export function openRecall(slug, deck, template, onClose) {
   function updateHeaderCount() {
     if (stopped) return;
     const remaining = queue.length + (currentSlide ? 1 : 0);
-    countSpan.textContent = remaining === 0 ? "queue empty" : `${remaining} due`;
+    countSpan.textContent =
+      remaining === 0 ? "queue empty" : `${remaining} ${studyingAhead ? "ahead" : "due"}`;
     countSpan.classList.toggle("unsaved", unsaved.size > 0);
     countSpan.title = unsaved.size
       ? `${unsaved.size} grade${unsaved.size > 1 ? "s" : ""} did not reach the server. They will be asked again next time.`
@@ -557,6 +564,9 @@ export function openRecall(slug, deck, template, onClose) {
           const data = await res.json();
           if (data.next) schedule[slide.id] = data.next;
           if (data.memory) memories[slide.id] = data.memory;
+          if (data.ahead) {
+            ahead = data.ahead.filter((id) => slidesById.has(id) && !queue.includes(id));
+          }
           unsaved.delete(slide.id);
         } else {
           unsaved.add(slide.id);
@@ -666,14 +676,44 @@ export function openRecall(slug, deck, template, onClose) {
     doneBtn.textContent = "Done";
     doneBtn.onclick = () => stop();
 
+    // Clearing the queue is the honest end of a session, and the offer to keep
+    // going sits below that line rather than in place of it. Studying ahead is
+    // a worse use of the same minutes than waiting is - that is the whole
+    // finding - but "come back Thursday" is not a thing an app can say to
+    // someone who wants to work now, so it says what it costs instead.
+    let aheadBtn = null;
+    if (ahead.length > 0 && !studyingAhead) {
+      aheadBtn = document.createElement("button");
+      aheadBtn.className = "recall-ahead-btn";
+      aheadBtn.textContent = `Study ahead (${ahead.length})`;
+      aheadBtn.onclick = () => {
+        window.removeEventListener("keydown", onDoneKeyDown, true);
+        queue = ahead.slice();
+        ahead = [];
+        studyingAhead = true;
+        nextCard();
+      };
+    }
+
+    const aheadNote = document.createElement("p");
+    if (aheadBtn) {
+      aheadNote.className = "recall-ahead-note";
+      aheadNote.textContent =
+        "Weakest first. Reviewing early is worth less than waiting is, and the schedule prices it that way - it will not push these much further out.";
+    }
+
     card.append(title, summary, split, dueP);
     if (unsaved.size) card.append(warn);
     card.append(doneBtn);
+    if (aheadBtn) card.append(aheadBtn, aheadNote);
     stage.append(card);
     main.append(stage);
 
     function onDoneKeyDown(e) {
       if (e.key === "Enter" || e.key === " ") {
+        // Let the ahead button answer for itself when it has the focus,
+        // or this handler closes the session out from under it.
+        if (aheadBtn && document.activeElement === aheadBtn) return;
         e.preventDefault();
         window.removeEventListener("keydown", onDoneKeyDown, true);
         stop();

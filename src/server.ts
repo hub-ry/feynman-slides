@@ -553,6 +553,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return json(res, 200, {
       memories: recall.memories,
       due,
+      /** Not due, weakest first. What to offer when the queue runs dry. */
+      ahead: store.aheadSlides(deck, recall, now),
       lastStudied: recall.lastStudied,
       /**
        * How likely you are to still have each slide, right now.
@@ -600,6 +602,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       wait: human(new Date(after.due).getTime() - now.getTime()),
       next: Object.fromEntries(RATINGS.map((g) => [g, human(next[g])])),
       due: store.dueSlides(deck, recall, now),
+      ahead: store.aheadSlides(deck, recall, now),
     });
   }
 

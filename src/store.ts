@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Finding } from "./critic.ts";
 import { type Deck, blankDeck, slideKey, slideDigest, stillApplies, migrate, hasText, blocks } from "./deck.ts";
-import { type Memory, newMemory, isDue } from "./recall.ts";
+import { type Memory, newMemory, isDue, retrievability } from "./recall.ts";
 
 export const HOME = process.env.FEYNMAN_SLIDES_HOME ?? join(homedir(), ".feynman-slides");
 export const DECKS = join(HOME, "decks");
@@ -389,11 +389,38 @@ export function pruneRecall(deck: Deck, recall: Recall): Recall {
  * from slides that actually say something, which is also why the app never
  * has to ask you to author a card - you already did, by writing the slide.
  */
+function cardSlides(deck: Deck) {
+  return deck.slides.filter(
+    (s) => hasText(s) && s.els.filter((e) => e.type === "text" && e.text?.trim()).length > 1,
+  );
+}
+
 export function dueSlides(deck: Deck, recall: Recall, now: Date = new Date()): string[] {
-  return deck.slides
-    .filter((s) => hasText(s) && s.els.filter((e) => e.type === "text" && e.text?.trim()).length > 1)
+  return cardSlides(deck)
     .filter((s) => isDue(recall.memories[slideKey(s)] ?? newMemory(now), now))
     .map(slideKey);
+}
+
+/**
+ * What to offer someone who has cleared the queue and wants to keep going.
+ *
+ * Not due, weakest memory first. The order is by retrievability rather than
+ * by due date because those are not the same question: a slide you barely
+ * held on to yesterday is a better use of the next two minutes than one that
+ * happens to come up sooner. FSRS already prices an early review honestly -
+ * the stability gain carries a (1 - r) term, so asking about something you
+ * certainly still know buys almost nothing - which means this list can be
+ * offered without the schedule having to defend itself against it.
+ *
+ * A slide that has never been reviewed is due the moment it exists, so it is
+ * never in here. This is only ever slides you have already seen.
+ */
+export function aheadSlides(deck: Deck, recall: Recall, now: Date = new Date()): string[] {
+  return cardSlides(deck)
+    .map((s) => ({ key: slideKey(s), memory: recall.memories[slideKey(s)] }))
+    .filter((c) => c.memory && !isDue(c.memory, now))
+    .sort((a, b) => retrievability(a.memory!, now) - retrievability(b.memory!, now))
+    .map((c) => c.key);
 }
 
 export type CriticConfig = {

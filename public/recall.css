@@ -543,6 +543,40 @@
   background: color-mix(in srgb, var(--sel) 88%, black);
 }
 
+/* Secondary to Done on purpose. Clearing the queue is the result; going on is
+   the option, and it should not be the thing the eye lands on first. */
+.recall-ahead-btn {
+  /* Block-level so it stacks under Done rather than sitting beside it: the
+     card is text-align:center, so an inline-flex button would share the line. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 130px;
+  margin: 0.85rem auto 0;
+  padding: 0.5rem 1.15rem;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.recall-ahead-btn:hover {
+  color: var(--ink);
+  border-color: var(--faint);
+}
+
+.recall-ahead-note {
+  margin: 0.6rem auto 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dim);
+  max-width: 28rem;
+}
+
 /* --- Responsive layout ---------------------------------------------------- */
 
 @media (max-width: 899px) {
