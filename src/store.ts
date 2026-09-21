@@ -343,18 +343,30 @@ export function deleteDeck(slug: string): void {
 export type Recall = {
   /** By slide id. Slides with no memory yet have simply never been studied. */
   memories: Record<string, Memory>;
+  /**
+   * The slide as it read when it was last graded, by slide id.
+   *
+   * Recall evidence is about the words you actually recalled. Rewrite the
+   * slide and the record stops describing it, which is what lets the critic
+   * know to come back at full volume. See `settled` in src/fade.ts.
+   */
+  recalled?: Record<string, string>;
   /** ISO of the last graded slide, for the streak line on the home page. */
   lastStudied?: string;
 };
 
-const NO_RECALL: Recall = { memories: {} };
+const NO_RECALL: Recall = { memories: {}, recalled: {} };
 
 export function readRecall(slug: string): Recall {
   const p = recallPath(slug);
   if (!existsSync(p)) return structuredClone(NO_RECALL);
   try {
     const parsed = JSON.parse(readFileSync(p, "utf8"));
-    return { memories: parsed.memories ?? {}, lastStudied: parsed.lastStudied };
+    return {
+      memories: parsed.memories ?? {},
+      recalled: parsed.recalled ?? {},
+      lastStudied: parsed.lastStudied,
+    };
   } catch {
     return structuredClone(NO_RECALL);
   }
@@ -376,6 +388,9 @@ export function pruneRecall(deck: Deck, recall: Recall): Recall {
   const live = new Set(deck.slides.map(slideKey));
   for (const key of Object.keys(recall.memories)) {
     if (!live.has(key)) delete recall.memories[key];
+  }
+  for (const key of Object.keys(recall.recalled ?? {})) {
+    if (!live.has(key)) delete recall.recalled![key];
   }
   return recall;
 }

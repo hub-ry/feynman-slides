@@ -310,9 +310,36 @@ That is a direct argument for reviewing each slide as it is written rather
 than grading the finished deck, and it is the strongest available defence of
 the product's core bet.
 
-Collins, Brown and Newman's cognitive apprenticeship (1989) names the sequence
-this app is missing the end of: model, coach, scaffold, **fade**. Nothing here
-fades. The critic is as loud on your fortieth deck as your first.
+Collins, Brown and Newman's cognitive apprenticeship (1989) names the sequence:
+model, coach, scaffold, **fade**. The app did the first three and stopped. The
+critic was as loud on your fortieth deck as your first.
+
+The hard part was never the fading, it was finding a signal worth fading on.
+Deck count measures how long you have used the app. Finding rate measures the
+critic. The schedule measures the only thing that matters - whether a slide you
+wrote is one you can still produce a week later - and it only became available
+once section 5 shipped.
+
+**What changed:** `src/fade.ts`. A slide you have recalled correctly at least
+three times, that you have not rewritten since, stops getting the advisory
+pass. The two-second pause is the interruption - it fires mid-sentence, which
+Iqbal and Bailey say is the expensive place to interrupt - so that is what
+goes. The firm pass on leaving the box still runs.
+
+Two severities deliberately do not fade. `error` stays because a slide that
+looks finished and is subtly wrong is the worst thing this tool can produce,
+and recalling it confidently is not evidence against that - it is the failure
+mode. `jargon` stays because recall here is self-graded against a slide you
+wrote yourself, which is close to worthless as evidence about hiding behind a
+word: the expert blind spot predicts that a chunk label is *easy* to reproduce,
+so "uses a B-tree" would grade itself `Good` every time. What fades is `note`,
+the severity that says your slide is untidy, which is worth hearing while you
+are learning the shape of a good slide and is noise once you have demonstrably
+learned this one. `probe` stays, and on a settled slide it is the only thing
+left worth saying.
+
+The pane says when it has gone quiet. A critic that silently stops is
+indistinguishable from a critic that is broken.
 
 Matuschak and Nielsen's mnemonic medium is the closest living relative
 ([numinous.productions/ttft](https://numinous.productions/ttft/)). Quantum
@@ -339,5 +366,7 @@ agreement on authentic coursework ([Applied Sciences,
 2026](https://www.mdpi.com/2076-3417/16/12/5902)). Self-grading after seeing
 the slide is worse in theory and honest about its own reliability.
 
-**Fading the critic.** Cognitive apprenticeship says it should fade. We do not
-know what to fade on. Noted so it does not get lost.
+**Fading the critic beyond the advisory pass.** The firm pass never fades, and
+`error` and `jargon` never fade. Whether a long enough recall record should
+eventually quiet those too is a real question and there is no evidence here
+that would settle it.

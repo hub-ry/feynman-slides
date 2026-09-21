@@ -18,6 +18,11 @@ const $ = (id) => document.getElementById(id);
 const askReview = (slideId, firm) =>
   S.slug && slideId && api("/review", { method: "POST", body: JSON.stringify({ slideId, firm }) });
 
+// Slides the critic has stepped back from, by slide id. Server-owned - it
+// decides, we only report it - so this is refreshed from every findings event
+// rather than being worked out again here. See src/fade.ts.
+const fadedSlides = new Set();
+
 const PAUSE_MS = 2000;
 let pauseTimer = null;
 
@@ -100,6 +105,12 @@ let stream = null;
 export function connect() {
   disconnect();
   stream = new EventSource(`/api/deck/${S.slug}/events`);
+  stream.addEventListener("faded", (e) => {
+    // The advisory pass did not run because this slide has earned quiet. Say
+    // so: a critic that silently stops is indistinguishable from a broken one.
+    fadedSlides.add(JSON.parse(e.data).slideKey);
+    emit("findings");
+  });
   stream.addEventListener("reviewing", (e) => {
     S.reviewing.add(JSON.parse(e.data).slideKey);
     emit("status");
@@ -111,8 +122,10 @@ export function connect() {
     emit("findings");
   });
   stream.addEventListener("findings", (e) => {
-    const { slideKey, findings, criticMode, criticProvider, digest } = JSON.parse(e.data);
+    const { slideKey, findings, criticMode, criticProvider, digest, faded } = JSON.parse(e.data);
     S.critiques.findings[slideKey] = findings;
+    if (faded) fadedSlides.add(slideKey);
+    else fadedSlides.delete(slideKey);
     if (digest) {
       S.critiques.reviewed ??= {};
       S.critiques.reviewed[slideKey] = { digest };
@@ -494,10 +507,13 @@ export function paintFindings(goTo) {
       for (const f of curFindings) list.append(card(f, S.idx, goTo));
       box.append(list);
     } else if (state === "current") {
+      const isFaded = fadedSlides.has(curSlide?.id);
       const empty = emptyState({
-        icon: "shield-check",
-        title: "This slide is clean",
-        desc: `No factual conflicts or unexplained jargon on slide ${S.idx + 1}.`,
+        icon: isFaded ? "graduation-cap" : "shield-check",
+        title: isFaded ? `Slide ${S.idx + 1} is settled` : "This slide is clean",
+        desc: isFaded
+          ? "You have recalled this one correctly, without rewriting it since. The critic has stopped reading over your shoulder as you type - it still checks for errors and jargon when you leave the box."
+          : `No factual conflicts or unexplained jargon on slide ${S.idx + 1}.`,
         clean: true,
       });
       if (S.criticProvider === "heuristic") {

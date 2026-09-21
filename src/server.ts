@@ -12,6 +12,7 @@ import { join, dirname, extname, normalize, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startCritic, type CriticSession, type Finding, resolveProvider, testCriticConnection } from "./critic.ts";
 import { type Deck, slideKey, slideDigest, hasText, uid } from "./deck.ts";
+import { settled, faded } from "./fade.ts";
 import * as store from "./store.ts";
 import { type Rating, RATINGS, newMemory, grade, preview, retrievability, human } from "./recall.ts";
 import { exportDeck, Blocked } from "./export.ts";
@@ -104,16 +105,29 @@ async function review(slug: string, slideId: string, firm: boolean): Promise<voi
     d.queued.set(key, (d.queued.get(key) ?? false) || firm);
     return;
   }
-  d.reviewing.add(key);
-  push(slug, "reviewing", { slideKey: key });
-
   // The fingerprint of what we are about to send, not of whatever is on disk
   // when the answer lands. If they kept typing, the critique that comes back
   // is already about older words, and the pane has to be able to tell.
   const digest = slideDigest(slide);
 
+  // Fade. A slide you have recalled correctly, more than once, without having
+  // touched it since, does not need someone reading over your shoulder while
+  // you type. The advisory pass is the interruption - it fires mid-sentence -
+  // so that is what goes; the firm pass on leaving the box still runs, and
+  // still blocks on anything that would block. See src/fade.ts.
+  const recall = store.readRecall(slug);
+  const quiet = settled(recall.memories[key], digest, recall.recalled?.[key]);
+  if (quiet && !firm) {
+    push(slug, "faded", { slideKey: key });
+    return;
+  }
+
+  d.reviewing.add(key);
+  push(slug, "reviewing", { slideKey: key });
+
   try {
-    const findings = await d.critic.review(slide, deck.sources ?? [], firm);
+    const found = await d.critic.review(slide, deck.sources ?? [], firm);
+    const findings = quiet ? faded(found) : found;
     const state = store.prune(deck, store.readState(slug));
     // An advisory pass never clears a firm pass's findings: you paused
     // mid-sentence, which is not evidence the slide got better.
@@ -129,6 +143,8 @@ async function review(slug: string, slideId: string, firm: boolean): Promise<voi
       blocking: store.blocking(state).length,
       criticMode: d.critic.mode(),
       criticProvider: d.critic.provider(),
+      /** So the pane can say why it went quiet instead of looking broken. */
+      faded: quiet,
     });
   } catch (err) {
     push(slug, "error", { message: String(err) });
@@ -583,7 +599,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       return json(res, 400, { error: "rating must be 1 (again), 2 (hard), 3 (good) or 4 (easy)" });
     }
     const deck = store.readDeck(slug);
-    if (!deck.slides.some((sl) => sl.id === String(slideId))) {
+    const graded = deck.slides.find((sl) => sl.id === String(slideId));
+    if (!graded) {
       return json(res, 404, { error: "no such slide" });
     }
 
@@ -593,6 +610,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const after = grade(before, r, now);
 
     recall.memories[String(slideId)] = after;
+    // Which words were recalled, not just that something was. Rewriting the
+    // slide has to be able to take its quiet away again - see src/fade.ts.
+    (recall.recalled ??= {})[String(slideId)] = slideDigest(graded);
     recall.lastStudied = now.toISOString();
     store.writeRecall(slug, recall);
 
