@@ -117,43 +117,85 @@ export const blocks = (finding) => !finding?.dismissed && BLOCKING.has(finding?.
  * Returns { run, text, label } for the longest match, run = 0 when there is
  * nothing worth reporting.
  */
-export function longestBorrowedRun(slideWords, sources, floor = 7) {
-  const norm = (s) =>
-    String(s || "")
+/**
+ * Every source flattened to words, with an index of where each word occurs.
+ *
+ * Built once per bin, not once per slide. The rail scores every slide on
+ * every repaint and a repaint happens on every keystroke, so doing this
+ * inside the scan meant indexing the whole bin once per slide: a forty-slide
+ * deck against a sixty-page lecture spent 125ms per repaint building the same
+ * index forty times. Keyed on the sources array itself, which is stable for
+ * as long as the bin is unchanged.
+ */
+const binCache = new WeakMap();
+function indexed(sources) {
+  let hit = binCache.get(sources);
+  if (hit) return hit;
+
+  hit = (sources ?? []).map((source) => {
+    const words = String(`${source.title || ""} ${source.text || ""}`)
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
       .filter(Boolean);
+    const at = new Map();
+    for (let j = 0; j < words.length; j++) {
+      const list = at.get(words[j]);
+      if (list) list.push(j);
+      else at.set(words[j], [j]);
+    }
+    return { words, at, label: source.label || "" };
+  });
 
-  const mine = Array.isArray(slideWords) ? slideWords.map((w) => String(w).toLowerCase()) : norm(slideWords);
-  let best = { run: 0, text: "", label: "" };
-  if (mine.length < floor) return best;
+  binCache.set(sources, hit);
+  return hit;
+}
 
-  for (const source of sources || []) {
-    const theirs = norm(`${source.title || ""} ${source.text || ""}`);
+/**
+ * The longest run of words the slide and a source have in common.
+ *
+ * This is the copy-paste detector, and it is pointed the opposite way from
+ * what you might expect. Overlap with your lecture notes is not evidence you
+ * understood the lecture - the Feynman move is restating the idea in words
+ * that are NOT the source's words, so a long verbatim run is the signature of
+ * the failure rather than of grounding. The old score gave twenty points out
+ * of a hundred for word overlap, which meant a slide that was a straight
+ * paste scored full marks on the dimension that was supposed to catch it.
+ *
+ * Runs, not bags of words. Sharing "hash" and "collision" with your professor
+ * is unavoidable and fine; sharing eleven consecutive words is a clipboard.
+ *
+ * Returns { run, text, label } for the longest match, run = 0 when there is
+ * nothing worth reporting.
+ */
+export function longestBorrowedRun(slideWords, sources, floor = 7) {
+  const mine = Array.isArray(slideWords)
+    ? slideWords.map((w) => String(w).toLowerCase())
+    : String(slideWords || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+
+  const miss = { run: 0, text: "", label: "" };
+  if (mine.length < floor) return miss;
+
+  let best = miss;
+  for (const { words: theirs, at, label } of indexed(sources)) {
     if (theirs.length < floor) continue;
 
-    // Where each word appears in the source, so the scan below only starts
-    // runs at positions that can actually begin one. A bin holding a 60-page
-    // lecture times thirty slides times every repaint is the shape of thing
-    // that is fine until someone uploads a real course.
-    const at = new Map();
-    for (let j = 0; j < theirs.length; j++) {
-      const list = at.get(theirs[j]);
-      if (list) list.push(j);
-      else at.set(theirs[j], [j]);
-    }
+    for (let i = 0; i + best.run < mine.length; i++) {
+      // A run starting here cannot beat the best unless the word `best.run`
+      // along also lines up, so check that end first and skip the whole
+      // position when it does not. On a bin full of "the" and "of" this is
+      // what stops every occurrence of a stopword starting a scan.
+      const starts = at.get(mine[i]);
+      if (!starts) continue;
 
-    for (let i = 0; i < mine.length; i++) {
-      for (const start of at.get(mine[i]) ?? []) {
+      for (const start of starts) {
+        if (best.run && theirs[start + best.run] !== mine[i + best.run]) continue;
         let n = 0;
         while (i + n < mine.length && start + n < theirs.length && mine[i + n] === theirs[start + n]) n++;
-        if (n > best.run) {
-          best = { run: n, text: mine.slice(i, i + n).join(" "), label: source.label || "" };
-        }
+        if (n > best.run) best = { run: n, text: mine.slice(i, i + n).join(" "), label };
       }
     }
   }
 
-  return best.run >= floor ? best : { run: 0, text: "", label: "" };
+  return best.run >= floor ? best : miss;
 }
