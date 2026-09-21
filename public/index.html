@@ -12,26 +12,28 @@
     if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
   } catch {}
 </script>
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="recall.css?v=1">
 <script type="importmap">
 {
   "imports": {
-    "./app.js": "./app.js?v=5",
+    "./app.js": "./app.js?v=6",
     "./state.js": "./state.js?v=5",
     "./ops.js": "./ops.js?v=5",
     "./canvas.js": "./canvas.js?v=5",
-    "./rail.js": "./rail.js?v=5",
+    "./rail.js": "./rail.js?v=6",
     "./format.js": "./format.js?v=5",
-    "./critic.js": "./critic.js?v=5",
+    "./critic.js": "./critic.js?v=6",
     "./bin.js": "./bin.js?v=5",
-    "./library.js": "./library.js?v=5",
-    "./present.js": "./present.js?v=5",
+    "./library.js": "./library.js?v=6",
+    "./present.js": "./present.js?v=6",
     "./preview.js": "./preview.js?v=5",
     "./theme.js": "./theme.js?v=5",
-    "./icons.js": "./icons.js?v=5",
+    "./icons.js": "./icons.js?v=6",
     "./render.js": "./render.js?v=5",
-    "./readable.js": "./readable.js?v=5",
-    "./score.js": "./score.js?v=5",
+    "./readable.js": "./readable.js?v=6",
+    "./score.js": "./score.js?v=6",
+    "./recall.js": "./recall.js?v=1",
     "./pdf-text.js": "./pdf-text.js?v=5"
   }
 }
@@ -86,6 +88,11 @@
 <div class="titlebar">
   <button id="toHome" class="logo" title="All decks" aria-label="All decks"></button>
   <span id="deckTitle" class="deckname"></span>
+  <!-- Who the deck is for. Not decoration: teaching without the expectation of
+       a reader is worth about nothing (Kobayashi 2019), and this is also the
+       only thing that makes the critic's jargon test answerable. See
+       docs/research.md section 4. -->
+  <button id="audienceBtn" class="audience" title="Who you are explaining this to"></button>
   <div class="menu-wrap">
     <button id="deckMenu" class="icon" title="This deck" aria-label="This deck">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="18.5" r="2.1"/></svg>
@@ -115,6 +122,9 @@
   <button id="binToggle" class="ghost bin-toggle" aria-expanded="false" title="Source material">
     <svg viewBox="0 0 24 24"><path d="M4.5 5.5h15v13h-15zM4.5 13.5h4l1.4 2.3h4.2l1.4-2.3h4"/></svg>
     Source material <span id="binCount" class="count"></span>
+  </button>
+  <button id="recallBtn" class="ghost strong" title="Recall  (R)">
+    Recall <span id="recallDue" class="count"></span>
   </button>
   <button id="present" class="ghost strong">Present</button>
   <button id="export" class="primary" disabled>Export</button>

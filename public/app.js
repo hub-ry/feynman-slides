@@ -15,6 +15,7 @@ import { paintFindings, connect, disconnect, blockingNow } from "./critic.js";
 import { paintBin, wireBin, showBin, binOpen } from "./bin.js";
 import { openLayouts, openTemplates, openNewDeck, openMoveDialog, openCriticSetupModal } from "./library.js";
 import { present } from "./present.js";
+import { openRecall } from "./recall.js";
 import { miniature } from "./preview.js";
 import { pick } from "./theme.js";
 import { iconSvg } from "./icons.js";
@@ -205,6 +206,8 @@ const KEYS = [
 
   { group: "The deck", key: "m", label: "Stylesheets & templates", btn: "tplBtn", run: () => openTemplates("community") },
   { group: "The deck", key: "p", label: "Present", btn: "present", run: () => present(S.idx) },
+  { group: "The deck", key: "r", shift: true, label: "Recall the slides that are due", btn: "recallBtn",
+    run: () => startRecall() },
   { group: "The deck", key: "e", label: "Export", btn: "export", run: () => doExport() },
   { group: "The deck", key: "h", label: "All decks", btn: "toHome", run: () => go("#/") },
   { group: "The deck", key: "z", mod: true, label: "Undo", show: "⌘Z", run: () => undo() },
@@ -233,7 +236,12 @@ addEventListener("keydown", (e) => {
   // The editor's single-letter keys belong to a slide. On the home page there
   // is no slide, and N would otherwise add one to the deck you last had open.
   if (document.body.dataset.view === "home") return;
+  // Both overlays own the whole keyboard while they are up. Without the
+  // second line every single-letter binding in here fires underneath the
+  // recall session: pressing T to start a sentence about a hash table would
+  // arm the text tool on the slide behind it.
   if (document.getElementById("presenter")) return;
+  if (document.getElementById("recall-session")) return;
   const inField = ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
   const typing = Boolean(S.editing) || inField;
 
@@ -401,6 +409,41 @@ $("theme").onclick = cycleTheme;
 $("homeTheme").onclick = cycleTheme;
 if ($("homeAiSetup")) $("homeAiSetup").onclick = () => openCriticSetupModal();
 $("present").onclick = () => present(S.idx);
+
+/**
+ * Open the recall session, and refresh the due count on the way out.
+ *
+ * The count on the button is the only reason to come back to a deck you have
+ * finished writing, so it has to be right the moment the session closes
+ * rather than at the next page load.
+ */
+function startRecall() {
+  openRecall(S.slug, S.deck, template(), () => void refreshDue());
+}
+$("recallBtn").onclick = () => startRecall();
+
+/**
+ * How many slides are due, on the button.
+ *
+ * Dunlosky's two high-utility techniques are practice testing and DISTRIBUTED
+ * practice, and the second one only happens if something tells you today is
+ * the day. A deck with nothing due says nothing, because a badge showing zero
+ * is a badge you stop reading.
+ */
+async function refreshDue() {
+  const badge = $("recallDue");
+  if (!badge || !S.slug) return;
+  try {
+    const r = await fetch(`/api/deck/${S.slug}/recall`);
+    const { due = [] } = await r.json();
+    badge.textContent = due.length || "";
+    $("recallBtn").title = due.length
+      ? `${due.length} slide${due.length > 1 ? "s" : ""} due for recall  (⇧R)`
+      : "Nothing due yet. Recall anything early  (⇧R)";
+  } catch {
+    badge.textContent = "";
+  }
+}
 $("helpBtn").onclick = toggleHelp;
 $("new").onclick = openNewDeck;
 $("homeNew").onclick = () => openNewDeck({ folder: currentFolder });
@@ -435,6 +478,42 @@ $("renameDeck").onclick = async () => {
   $("deckTitle").textContent = S.deck.title;
   connect();
 };
+/**
+ * Who this deck is being explained to.
+ *
+ * Kobayashi's meta-analysis is unusually blunt about this: teaching after
+ * studying WITHOUT the expectation of teaching did not differ from zero, and
+ * with the expectation it was g = 0.48. The reader is not a label on the deck,
+ * it is the condition under which any of this works at all - so the prompt is
+ * loud while it is unanswered and quiet once it is.
+ */
+function paintAudience() {
+  const btn = $("audienceBtn");
+  if (!btn) return;
+  const who = S.deck.audience?.trim();
+  btn.classList.toggle("unset", !who);
+  btn.textContent = who ? `for ${who}` : "who is this for?";
+  btn.title = who
+    ? `You are explaining this to: ${who}. Click to change.`
+    : "Name the person you are explaining this to. The critic judges jargon against them.";
+}
+
+$("audienceBtn").onclick = async () => {
+  const who = prompt(
+    "Who are you explaining this deck to?\n\nOne sentence. The critic judges every term against this reader, so \"a first-year who has done calculus\" and \"my study group\" get you different findings.",
+    S.deck.audience ?? "",
+  );
+  if (who === null) return;
+  const { ok, data } = await api("/audience", { method: "POST", body: JSON.stringify({ audience: who }) });
+  if (!ok) return;
+  S.deck.audience = data.audience;
+  paintAudience();
+  // The session was told who it was reading for when it opened and the server
+  // has just closed it, so the stream has to be re-established.
+  connect();
+  emit("say", data.audience ? `explaining this to ${data.audience}` : "no reader set");
+};
+
 $("moveDeckFolder").onclick = () => {
   openMoveDialog(S.slug, S.deck.title, S.deck.folder, (next) => {
     S.deck.folder = next ?? undefined;
@@ -555,8 +634,10 @@ async function load(next) {
   S.lastLayout = S.deck.slides[0]?.layout ?? "title-body";
   $("deckTitle").textContent = S.deck.title;
   document.title = `${S.deck.title} - feynman-slides`;
+  paintAudience();
   connect();
   paintAll();
+  void refreshDue();
 }
 
 let currentFolder = null;
@@ -618,10 +699,10 @@ function openDeckCardMenu(e, d, onUpdate) {
 
   const items = [
     {
-      label: "Study (Anki mode)",
+      label: "Recall what is due",
       icon: iconSvg("brain", 14),
       action: () => {
-        location.hash = `#/present/${d.slug}`;
+        location.hash = `#/recall/${d.slug}`;
       },
     },
     {
@@ -731,12 +812,16 @@ function createDeckCard(d) {
 
   const studyOverlay = document.createElement("button");
   studyOverlay.className = "card-study-overlay";
-  studyOverlay.title = "Study in Anki active-recall mode";
-  studyOverlay.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg> Study`;
+  studyOverlay.title = d.due
+    ? `${d.due} slide${d.due === 1 ? "" : "s"} due. Say each one before you see it.`
+    : "Nothing due yet. Recall anything early.";
+  studyOverlay.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg> Recall`;
   studyOverlay.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    location.hash = `#/present/${d.slug}`;
+    // Both of these used to point at #/present/<slug>, which no route matches,
+    // so the Study button quietly put you back on the home page.
+    location.hash = `#/recall/${d.slug}`;
   };
   shot.append(studyOverlay);
 
@@ -767,6 +852,16 @@ function createDeckCard(d) {
     card.append(Object.assign(document.createElement("span"), {
       className: "card-gate",
       textContent: `${d.blocking} to deal with`,
+    }));
+  }
+  // Distributed practice is one of the only two techniques Dunlosky et al.
+  // rated HIGH, and it only ever happens if something tells you today is the
+  // day. This is the reason to reopen a deck you have finished writing, so it
+  // belongs on the card rather than three clicks inside it.
+  if (d.due) {
+    card.append(Object.assign(document.createElement("span"), {
+      className: "card-due",
+      textContent: `${d.due} to recall`,
     }));
   }
   return card;
@@ -937,17 +1032,24 @@ function when(ms) {
 const decks = () => fetch("/api/decks").then((r) => r.json());
 
 async function router() {
-  const m = /^#\/deck\/([a-z0-9-]+)$/.exec(location.hash);
+  const m = /^#\/(deck|recall)\/([a-z0-9-]+)$/.exec(location.hash);
   const [list, folders] = await Promise.all([decks(), getFolders()]);
   await loadTemplates();
 
-  if (m && list.some((d) => d.slug === m[1])) {
+  if (m && list.some((d) => d.slug === m[2])) {
     document.body.dataset.view = "editor";
     if (window.innerWidth <= 860 && !document.body.classList.contains("no-critic")) {
       toggleCritic(true);
     }
-    await load(m[1]);
+    await load(m[2]);
     scaleRail();
+    // #/recall/<slug> opens the deck and goes straight into the session, so
+    // closing it leaves you in the editor rather than back on the home page.
+    // The hash is normalised first, or a reload would reopen the session.
+    if (m[1] === "recall") {
+      history.replaceState(null, "", `#/deck/${m[2]}`);
+      startRecall();
+    }
     return;
   }
   document.body.dataset.view = "home";

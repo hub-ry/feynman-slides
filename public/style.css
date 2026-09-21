@@ -14,7 +14,7 @@
   --ink: #1f2124; --dim: #5b6066; --faint: #868d95;
   --bg: #f6f7f9; --panel: #ffffff; --rule: #e1e4e8; --sunk: #eceef1;
   --hover: #f0f2f5; --active: #e8f0fe; --deep: #dfe3e8;
-  --error: #c5221f; --jargon: #a55a00; --note: #5b6066;
+  --error: #c5221f; --jargon: #a55a00; --note: #5b6066; --probe: #6d28d9;
   --ok: #167c3c; --sel: #1a73e8; --onsel: #ffffff;
   --shadow-1: 0 1px 2px rgba(20,24,31,.09), 0 1px 3px rgba(20,24,31,.06);
   --shadow-2: 0 4px 12px rgba(20,24,31,.11), 0 12px 32px rgba(20,24,31,.13);
@@ -28,7 +28,7 @@
     --ink: #e7e9ec; --dim: #9aa1a9; --faint: #7d848c;
     --bg: #17181b; --panel: #1f2125; --rule: #32353a;
     --sunk: #101114; --hover: #2a2d32; --active: #253046; --deep: #2a2d32;
-    --error: #f28b82; --jargon: #f2c14e; --note: #9aa1a9;
+    --error: #f28b82; --jargon: #f2c14e; --note: #9aa1a9; --probe: #c4b5fd; --probe: #c4b5fd;
     --ok: #7ee0a0; --sel: #8ab4f8; --onsel: #17181b;
     --shadow-1: 0 1px 2px rgba(0,0,0,.5);
     --shadow-2: 0 4px 14px rgba(0,0,0,.5);
@@ -39,7 +39,7 @@
   --ink: #e7e9ec; --dim: #9aa1a9; --faint: #7d848c;
   --bg: #17181b; --panel: #1f2125; --rule: #32353a; --sunk: #101114;
   --hover: #2a2d32; --active: #253046; --deep: #2a2d32;
-  --error: #f28b82; --jargon: #f2c14e; --note: #9aa1a9;
+  --error: #f28b82; --jargon: #f2c14e; --note: #9aa1a9; --probe: #c4b5fd;
   --ok: #7ee0a0; --sel: #8ab4f8; --onsel: #17181b;
   --shadow-1: 0 1px 2px rgba(0,0,0,.5);
   --shadow-2: 0 4px 14px rgba(0,0,0,.5);
@@ -276,6 +276,16 @@ button.logo:hover { background: var(--sel); filter: brightness(1.1); }
   background: color-mix(in srgb, var(--error) 16%, var(--panel));
   padding: .2rem .5rem; border-radius: 100px;
 }
+
+/* Slides whose recall is due. Sits under the blocking badge when a deck has
+   both, since they are appended in that order and both want the top corner. */
+.card-due {
+  position: absolute; top: 1.1rem; right: 1.1rem;
+  font-size: 11.5px; font-weight: 550; color: var(--sel);
+  background: color-mix(in srgb, var(--sel) 14%, var(--panel));
+  padding: .2rem .5rem; border-radius: 100px;
+}
+.card-gate + .card-due { top: 2.85rem; }
 
 /* Card menu button (3 dots) */
 .card-menu-btn {
@@ -644,6 +654,12 @@ button.upload svg { width: 15px; height: 15px; stroke-width: 2.4; }
   background: var(--hover);
   color: var(--dim);
 }
+/* A question about a slide that is fine. It is not a defect and must not be
+   coloured like one - see section 8 of docs/research.md. */
+.critique-status-pill.probe {
+  background: color-mix(in srgb, var(--probe) 14%, transparent);
+  color: var(--probe);
+}
 .critique-status-pill.clean {
   background: color-mix(in srgb, var(--ok) 12%, transparent);
   color: var(--ok);
@@ -892,6 +908,10 @@ button.upload svg { width: 15px; height: 15px; stroke-width: 2.4; }
   color: var(--dim);
   background: color-mix(in srgb, var(--dim) 12%, transparent);
 }
+.sev-badge.probe {
+  color: var(--probe);
+  background: color-mix(in srgb, var(--probe) 14%, transparent);
+}
 .sev-pip {
   width: 5px;
   height: 5px;
@@ -943,6 +963,9 @@ button.upload svg { width: 15px; height: 15px; stroke-width: 2.4; }
 }
 .finding.sev-jargon .finding-quote {
   border-left-color: var(--jargon);
+}
+.finding.sev-probe .finding-quote {
+  border-left-color: var(--probe);
 }
 .finding-quote code {
   font-family: var(--mono);
@@ -1400,15 +1423,6 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 #presenter:hover { cursor: default; }
 #presenter .pslide { box-shadow: 0 24px 80px rgba(0,0,0,.6); border-radius: 2px; }
 
-/* Anki-style active recall concealment */
-#presenter .study-concealed .el:not(:first-child) {
-  filter: blur(16px);
-  opacity: 0.12;
-  user-select: none;
-  pointer-events: none;
-  transition: filter 0.2s ease, opacity 0.2s ease;
-}
-
 #presenter .pbar {
   position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: .75rem;
@@ -1424,21 +1438,6 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   cursor: pointer; transition: all .12s ease;
 }
 #presenter .pbar-btn:hover { background: rgba(255, 255, 255, .16); color: #fff; }
-#presenter .pbar-btn.on {
-  background: #2563eb; color: #fff; font-weight: 600;
-}
-#presenter .pbar-action-btn {
-  font-size: 12px; font-weight: 600; padding: .25rem .75rem; border-radius: 100px;
-  background: #16a34a; color: #fff; border: 0; cursor: pointer;
-  box-shadow: 0 0 14px rgba(22, 163, 74, .45); transition: background .12s ease;
-}
-#presenter .pbar-action-btn:hover { background: #15803d; }
-#presenter .pbar-grade-btn {
-  font-size: 11.5px; font-weight: 600; padding: .22rem .65rem; border-radius: 100px;
-  border: 0; cursor: pointer;
-}
-#presenter .pbar-grade-btn.tricky { background: #dc2626; color: #fff; }
-#presenter .pbar-grade-btn.good { background: #059669; color: #fff; }
 
 /* --- card study overlay & dropdown menu ----------------------------------- */
 .card .shot { position: relative; }
@@ -1648,12 +1647,9 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   color: var(--ink); transition: all .1s ease;
 }
 .rail-deck-score:hover { background: var(--hover); border-color: var(--dim); }
-.rail-deck-score .score-dot {
-  width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0;
-}
 .rail-deck-score .score-lbl { font-size: 10.5px; color: var(--dim); }
-.rail-deck-score .score-num { font-family: var(--mono); font-size: 11px; font-weight: 700; }
-.rail-deck-score .score-grd { font-size: 10px; opacity: 0.8; font-family: var(--mono); }
+.rail-deck-score .score-num { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--ink); }
+.rail-deck-score.has-open .score-num { color: var(--jargon); }
 
 .rail-controls { display: flex; align-items: center; gap: .25rem; }
 .rail-icon-btn {
@@ -1692,21 +1688,37 @@ input.big:focus { outline: 0; border-color: var(--sel); }
   transform: scale(1.08);
 }
 
-.thumb .score-badge.tier-a-plus { background: rgba(5, 150, 105, 0.18); color: #34d399; border-color: rgba(5, 150, 105, 0.35); }
-.thumb .score-badge.tier-a { background: rgba(8, 145, 178, 0.18); color: #22d3ee; border-color: rgba(8, 145, 178, 0.35); }
-.thumb .score-badge.tier-b { background: rgba(37, 99, 235, 0.18); color: #60a5fa; border-color: rgba(37, 99, 235, 0.35); }
-.thumb .score-badge.tier-c { background: rgba(217, 119, 6, 0.18); color: #fbbf24; border-color: rgba(217, 119, 6, 0.35); }
-.thumb .score-badge.tier-d { background: rgba(220, 38, 38, 0.18); color: #f87171; border-color: rgba(220, 38, 38, 0.35); }
-/* Nothing written on the slide, so there is no grade to give. */
-.thumb .score-badge.tier-none { background: var(--hover); color: var(--faint); border-color: var(--rule); }
-/* A grade the critic has not confirmed against the words now on the slide. */
+/* Three states, because "one thing to fix" and "everything to fix" are the
+   same instruction and should not be six shades apart. Low is good here: the
+   number is how much is left open, not how well the slide scored. */
+.thumb .score-badge.tier-blocking {
+  background: rgba(220, 38, 38, .18); color: #f87171; border-color: rgba(220, 38, 38, .35);
+}
+.thumb .score-badge.tier-open {
+  background: rgba(217, 119, 6, .18); color: #fbbf24; border-color: rgba(217, 119, 6, .35);
+}
+/* Settled slides get a mark rather than a number. A slide with nothing open
+   does not need a figure on it, and the rail reads as a list of work when only
+   the unfinished ones carry one. */
+.thumb .score-badge.tier-settled {
+  background: rgba(5, 150, 105, .18); border-color: rgba(5, 150, 105, .35);
+  width: 12px; height: 12px; padding: 0; border-radius: 50%;
+}
+/* Nothing open, but the critic has not read this version, so two of the six
+   checks have no answer yet. Neutral rather than green: a clean bill of health
+   for words nobody has looked at is not a clean bill of health. */
+.thumb .score-badge.tier-waiting {
+  background: var(--hover); border-color: var(--rule);
+  width: 12px; height: 12px; padding: 0; border-radius: 50%;
+}
+/* Nothing written on the slide, so there is nothing to check. */
+.thumb .score-badge.tier-unwritten { background: var(--hover); color: var(--faint); border-color: var(--rule); }
+/* Checks the critic has not confirmed against the words now on the slide. */
 .thumb .score-badge.unsettled { opacity: .45; }
 
-[data-theme="light"] .thumb .score-badge.tier-a-plus { background: rgba(16, 185, 129, 0.12); color: #047857; border-color: rgba(16, 185, 129, 0.25); }
-[data-theme="light"] .thumb .score-badge.tier-a { background: rgba(6, 182, 212, 0.12); color: #0e7490; border-color: rgba(6, 182, 212, 0.25); }
-[data-theme="light"] .thumb .score-badge.tier-b { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; border-color: rgba(59, 130, 246, 0.25); }
-[data-theme="light"] .thumb .score-badge.tier-c { background: rgba(245, 158, 11, 0.12); color: #b45309; border-color: rgba(245, 158, 11, 0.25); }
-[data-theme="light"] .thumb .score-badge.tier-d { background: rgba(239, 68, 68, 0.12); color: #b91c1c; border-color: rgba(239, 68, 68, 0.25); }
+[data-theme="light"] .thumb .score-badge.tier-blocking { background: rgba(239, 68, 68, .12); color: #b91c1c; border-color: rgba(239, 68, 68, .25); }
+[data-theme="light"] .thumb .score-badge.tier-open { background: rgba(245, 158, 11, .12); color: #b45309; border-color: rgba(245, 158, 11, .25); }
+[data-theme="light"] .thumb .score-badge.tier-settled { background: rgba(16, 185, 129, .14); border-color: rgba(16, 185, 129, .3); }
 
 /* Score Popover */
 .score-popover {
@@ -1719,11 +1731,6 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 }
 .score-pop-header {
   display: flex; align-items: center; gap: .75rem; position: relative;
-}
-.score-pop-grade {
-  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 15px; font-family: var(--mono);
 }
 .score-pop-title h4 {
   margin: 0; font-size: 13.5px; font-weight: 600; color: var(--ink);
@@ -1739,41 +1746,36 @@ input.big:focus { outline: 0; border-color: var(--sel); }
 }
 .score-pop-close:hover { background: var(--hover); color: var(--ink); }
 
-.score-bars {
-  display: flex; flex-direction: column; gap: .45rem;
-  padding: .6rem .75rem; background: var(--bg); border: 1px solid var(--rule);
-  border-radius: 8px;
+/* The checklist. One row per check, each saying what it saw and, when it is
+   open, the one thing to do about it. No bars and no numbers - see the header
+   comment in score.js. */
+.score-checks {
+  margin: 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: .5rem;
 }
-.score-bar-row {
-  display: grid; grid-template-columns: 6rem 1fr 2.4rem; gap: .5rem; align-items: center;
-  font-size: 11px; color: var(--dim);
+.score-checks .chk {
+  display: grid; grid-template-columns: 16px 1fr; gap: .5rem; align-items: start;
+  font-size: 11.5px; line-height: 1.45;
 }
-.score-bar-row .bar-track {
-  height: 5px; border-radius: 100px; background: var(--rule); overflow: hidden;
+.score-checks .chk svg { margin-top: 1px; }
+.score-checks .chk span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.score-checks .chk strong { font-size: 11.5px; font-weight: 600; color: var(--ink); }
+.score-checks .chk em { font-style: normal; color: var(--dim); }
+/* What to do next, which is the only part worth a colour. */
+.score-checks .chk b {
+  font-weight: 500; color: var(--jargon);
+  margin-top: 2px; padding-left: .5rem;
+  border-left: 2px solid color-mix(in srgb, var(--jargon) 45%, transparent);
 }
-.score-bar-row .bar-fill {
-  height: 100%; border-radius: 100px; transition: width .2s ease;
-}
-.score-bar-row .bar-num {
-  font-family: var(--mono); font-size: 10px; text-align: right; color: var(--faint);
-}
+.score-checks .chk.clear svg { color: var(--ok); }
+.score-checks .chk.open svg { color: var(--jargon); }
+.score-checks .chk.unknown svg { color: var(--faint); }
+.score-checks .chk.unknown strong { color: var(--dim); }
+.score-checks .chk.unknown em { color: var(--faint); }
 
 .score-feedback {
   display: flex; flex-direction: column; gap: .6rem; font-size: 11.5px;
 }
-.feedback-section h6 {
-  margin: 0 0 .3rem; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .05em; color: var(--faint);
-}
-.feedback-section ul {
-  margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: .3rem;
-}
-.feedback-section li {
-  display: flex; align-items: flex-start; gap: .35rem;
-  line-height: 1.4; color: var(--dim);
-}
-.feedback-section.positive li { color: var(--ok); }
-.feedback-section.tips li { color: var(--dim); }
 
 /* --- phosphor icons integration ----------------------------------------- */
 .ph {
@@ -2463,6 +2465,7 @@ dialog.sheet.critic-modal .sheet-body {
 .test-sev.jargon { background: rgba(234, 179, 8, 0.2); color: #b45309; }
 .test-sev.error { background: rgba(239, 68, 68, 0.2); color: #dc2626; }
 .test-sev.note { background: rgba(59, 130, 246, 0.2); color: #2563eb; }
+.test-sev.probe { background: color-mix(in srgb, var(--probe) 20%, transparent); color: var(--probe); }
 
 .critic-actions-bar {
   display: flex;
@@ -2705,3 +2708,26 @@ dialog.sheet.critic-modal .sheet-body {
 
 
 
+
+/* Who the deck is being explained to, in the titlebar next to its name.
+   Loud while unanswered and quiet once it is: the question is worth asking
+   once and is not worth a permanent banner. See docs/research.md section 4. */
+.audience {
+  display: inline-block;
+  font-size: 11.5px; font-weight: 500; line-height: 1.3;
+  padding: .16rem .55rem; border-radius: 100px;
+  /* Narrow enough that a long reader does not push the deck menu off, and
+     block-level so the ellipsis actually renders - on a flex child it does
+     not, and the text was being sheared off mid-word at the border. */
+  max-width: 15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border: 1px solid var(--rule); background: var(--panel); color: var(--dim);
+  cursor: pointer; transition: all .1s ease;
+}
+.pbar-btn .ph-brain { stroke-width: 13; }
+.audience:hover { background: var(--hover); border-color: var(--dim); color: var(--ink); }
+.audience.unset {
+  color: var(--sel);
+  border-color: color-mix(in srgb, var(--sel) 40%, transparent);
+  background: color-mix(in srgb, var(--sel) 10%, transparent);
+}
+.audience.unset:hover { background: color-mix(in srgb, var(--sel) 18%, transparent); color: var(--sel); }
