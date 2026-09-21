@@ -165,6 +165,17 @@ per deck, and due counts on the deck cards. Study mode now asks you to type
 the explanation before it shows you the slide, because a blur you reveal is
 recognition and typing it is retrieval.
 
+One later correction, from using it: clearing the queue ended the session and
+the app went quiet for days, which reads as the schedule being wrong when it
+is the schedule working. The done card now offers the slides that are not yet
+due, ordered by retrievability so the weakest memory comes first. It is kept
+as a separate list rather than folded into the queue, because "you are caught
+up" is the one claim the schedule exists to make. Nothing had to be weakened
+to allow it: the stability gain in `recallStability` carries a `(1 - r)` term,
+so asking about something you certainly still know buys almost nothing, and
+`aheadSlides` in `src/store.ts` can offer the list without the schedule having
+to defend itself against it.
+
 ---
 
 ## 6. Generating the question beats being handed it
